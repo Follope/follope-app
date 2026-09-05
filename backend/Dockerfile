@@ -35,7 +35,9 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/prisma.config.ts ./
+COPY start.sh ./
+RUN chmod +x start.sh
 
 EXPOSE 3000
 
-CMD ["node", "dist/server.js"]
+CMD ["./start.sh"]
