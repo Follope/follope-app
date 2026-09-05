@@ -1,4 +1,11 @@
 import 'dotenv/config';
+import dns from 'node:dns';
+
+// Force IPv4 first for all DNS queries to prevent IPv6 ENETUNREACH in cloud environments
+if (dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder('ipv4first');
+}
+
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';

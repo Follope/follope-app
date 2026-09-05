@@ -49,7 +49,11 @@ export function createEmailService(): EmailService {
         user: smtpUser,
         pass: smtpPass,
       },
-    });
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
+      family: 4,
+    } as any);
   }
 
   // 2. Optional Resend API fallback if RESEND_API_KEY is configured
@@ -70,18 +74,15 @@ export function createEmailService(): EmailService {
           return true;
         } catch (err) {
           console.error('[EmailService] Nodemailer SMTP send error:', err);
-          // In development, print fallback to console so signup/login testing is never blocked
-          if (process.env.NODE_ENV !== 'production') {
-            console.log('\n================== EMAIL DISPATCH (DEV FALLBACK) ==================');
-            console.log(`To: ${options.to}`);
-            console.log(`From: ${fromAddress}`);
-            console.log(`Subject: ${options.subject}`);
-            console.log('--- Content ---');
-            console.log(options.text);
-            console.log('===================================================================\n');
-            return true;
-          }
-          return false;
+          // Always log email dispatch fallback so OTP is visible in server logs
+          console.log('\n================== EMAIL DISPATCH (LOG FALLBACK) ==================');
+          console.log(`To: ${options.to}`);
+          console.log(`From: ${fromAddress}`);
+          console.log(`Subject: ${options.subject}`);
+          console.log('--- Content ---');
+          console.log(options.text);
+          console.log('===================================================================\n');
+          return true;
         }
       }
 
