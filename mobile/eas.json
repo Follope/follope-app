@@ -13,7 +13,6 @@
       "android": {
         "buildType": "apk"
       },
-      "npmInstallFlags": ["--legacy-peer-deps"],
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "https://api.follope.com/v1"
       }
@@ -22,7 +21,6 @@
       "android": {
         "buildType": "app-bundle"
       },
-      "npmInstallFlags": ["--legacy-peer-deps"],
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "https://api.follope.com/v1"
       }
