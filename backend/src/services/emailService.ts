@@ -1,4 +1,6 @@
 import nodemailer, { type Transporter } from 'nodemailer';
+import dns from 'node:dns';
+import net from 'node:net';
 import {
   getOtpEmailTemplate,
   getWelcomeEmailTemplate,
@@ -40,20 +42,42 @@ export function createEmailService(): EmailService {
 
   let transporter: Transporter | null = null;
 
-  if (smtpHost && smtpUser && smtpPass) {
+  async function resolveTransporter(): Promise<Transporter | null> {
+    if (!smtpHost || !smtpUser || !smtpPass) return null;
+    if (transporter) return transporter;
+
+    let hostToUse = smtpHost;
+    // When host is a domain, resolve directly to IPv4 to prevent Nodemailer
+    // from attempting IPv6 routes that are unreachable in cloud container environments
+    if (!net.isIP(smtpHost)) {
+      try {
+        const res = await dns.promises.lookup(smtpHost, { family: 4 });
+        if (res?.address) {
+          hostToUse = res.address;
+        }
+      } catch {
+        hostToUse = smtpHost;
+      }
+    }
+
     transporter = nodemailer.createTransport({
-      host: smtpHost,
+      host: hostToUse,
       port: smtpPort,
       secure: smtpSecure,
+      servername: smtpHost,
+      tls: {
+        servername: smtpHost,
+      },
       auth: {
         user: smtpUser,
         pass: smtpPass,
       },
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 15000,
-      family: 4,
+      connectionTimeout: 8000,
+      greetingTimeout: 8000,
+      socketTimeout: 10000,
     } as any);
+
+    return transporter;
   }
 
   // 2. Optional Resend API fallback if RESEND_API_KEY is configured
@@ -62,9 +86,10 @@ export function createEmailService(): EmailService {
   const emailService: EmailService = {
     async sendEmail(options: SendEmailOptions): Promise<boolean> {
       // Option A: Send via Nodemailer SMTP (Hostinger, Gmail, SendGrid, etc.)
-      if (transporter) {
+      const activeTransporter = await resolveTransporter();
+      if (activeTransporter) {
         try {
-          await transporter.sendMail({
+          await activeTransporter.sendMail({
             from: fromAddress,
             to: options.to,
             subject: options.subject,
@@ -73,6 +98,7 @@ export function createEmailService(): EmailService {
           });
           return true;
         } catch (err) {
+          transporter = null;
           console.error('[EmailService] Nodemailer SMTP send error:', err);
           // Always log email dispatch fallback so OTP is visible in server logs
           console.log('\n================== EMAIL DISPATCH (LOG FALLBACK) ==================');
