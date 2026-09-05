@@ -1,0 +1,11 @@
+node_modules/
+.expo/
+dist/
+web-build/
+*.log
+.DS_Store
+*.pem
+
+# Native build artifacts if you ever run `expo prebuild`
+ios/
+android/

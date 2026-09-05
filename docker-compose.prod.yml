@@ -1,0 +1,50 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: follope-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-follope}
+    volumes:
+      - follope_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-follope}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - follope-network
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: follope-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-follope}?schema=public
+      AUTH_SECRET: ${AUTH_SECRET}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://follope.com,https://api.follope.com}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-https://follope.com}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-Follope <support@follope.com>}
+      TRUST_PROXY: "true"
+    networks:
+      - follope-network
+
+volumes:
+  follope_pgdata:
+    driver: local
+
+networks:
+  follope-network:
+    driver: bridge

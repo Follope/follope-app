@@ -1,0 +1,290 @@
+// Follope — core data model
+// All money fields are stored as integer paise (₹1 = 100 paise) to avoid
+// floating-point rounding errors. Never store money as Float/Decimal-from-client.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// AUTH / USER
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String?  // null if user only ever used Google auth
+  googleId      String?  @unique
+  name          String
+  passwordResetTokenHash String?
+  passwordResetExpiresAt DateTime?
+  pushToken     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  profile       Profile?
+  business      Business?
+  clients       Client[]
+  invoices      Invoice[]
+  sessions      Session[]
+  auditLogs     AuditLog[]
+  notifications Notification[]
+
+  @@index([email])
+}
+
+model Session {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokenHash String   @unique // never store raw refresh token
+  userAgent        String?
+  ipAddress        String?
+  revokedAt        DateTime?
+  expiresAt        DateTime
+  createdAt        DateTime @default(now())
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// PROFILE / BUSINESS
+// ---------------------------------------------------------------------------
+
+model Profile {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role         String?  // "developer" | "designer" | "video_editor" | ... (onboarding Q2)
+  phone        String?
+  preferredPaymentMethod String? // "upi" | "bank_transfer" | "cash" | "other"
+  onboardedAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Business {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessName String?
+  logoUrl     String?
+  email       String?
+  phone       String?
+  address     String?
+  gstin       String?  // optional — never mandatory
+  pan         String?  // optional
+  website     String?
+  upiId       String?  // e.g. name@upi
+
+  invoicePrefix     String   @default("FOL")
+  defaultDuePeriodDays Int   @default(7)
+  defaultTaxRateBps Int?     // basis points, e.g. 1800 = 18%
+  defaultInvoiceNotes String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// CLIENT
+// ---------------------------------------------------------------------------
+
+model Client {
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name           String
+  company        String?
+  email          String?
+  phone          String?
+  billingAddress String?
+  gstin          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  invoices       Invoice[]
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// INVOICE
+// ---------------------------------------------------------------------------
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  VIEWED
+  PENDING
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+model Invoice {
+  id             String        @id @default(cuid())
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientId       String
+  client         Client        @relation(fields: [clientId], references: [id])
+
+  invoiceNumber  String        // e.g. FOL-2026-0001, unique per user
+  publicToken    String        @unique @default(cuid()) // used in public URL — never expose internal id
+
+  status         InvoiceStatus @default(DRAFT)
+
+  issueDate      DateTime      @default(now())
+  dueDate        DateTime
+
+  currency       String        @default("INR")
+
+  // All totals are SERVER-CALCULATED from InvoiceItem rows. Client never sends these.
+  subtotalPaise    Int         @default(0)
+  discountPaise    Int         @default(0)
+  taxPaise         Int         @default(0)
+  totalPaise       Int         @default(0)
+  paidPaise        Int         @default(0) // sum of associated Payments
+  balancePaise     Int         @default(0) // totalPaise - paidPaise
+
+  notes          String?
+
+  sentAt         DateTime?
+  viewedAt       DateTime?
+  paidAt         DateTime?
+  cancelledAt    DateTime?
+  publicLinkExpiresAt DateTime?
+  publicLinkRevokedAt DateTime?
+
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  items          InvoiceItem[]
+  payments       Payment[]
+  reminders      Reminder[]
+  revisions      InvoiceRevision[]
+
+  @@unique([userId, invoiceNumber])
+  @@index([userId, status])
+  @@index([publicToken])
+}
+
+model InvoiceRevision {
+  id        String   @id @default(cuid())
+  invoiceId String
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  version   Int
+  snapshot  Json
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@unique([invoiceId, version])
+  @@index([invoiceId, createdAt])
+}
+
+model InvoiceItem {
+  id            String  @id @default(cuid())
+  invoiceId     String
+  invoice       Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  description   String
+  quantity      Decimal @db.Decimal(10, 2)
+  unitPricePaise Int
+  discountPaise Int     @default(0)
+  taxRateBps    Int     @default(0) // basis points, e.g. 1800 = 18%
+  sortOrder     Int     @default(0)
+
+  // computed + persisted at write time by the backend, never trusted from client
+  lineTotalPaise Int    @default(0)
+
+  @@index([invoiceId])
+}
+
+// ---------------------------------------------------------------------------
+// PAYMENTS
+// ---------------------------------------------------------------------------
+
+enum PaymentMethod {
+  UPI
+  BANK_TRANSFER
+  CASH
+  OTHER
+}
+
+model Payment {
+  id          String        @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  amountPaise Int
+  method      PaymentMethod
+  paidAt      DateTime
+  referenceId String?
+  notes       String?
+  reconciledAt DateTime?
+  createdAt   DateTime      @default(now())
+
+  @@index([invoiceId])
+}
+
+// ---------------------------------------------------------------------------
+// REMINDERS / NOTIFICATIONS
+// ---------------------------------------------------------------------------
+
+model Reminder {
+  id         String   @id @default(cuid())
+  invoiceId  String
+  invoice    Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  channel    String   // "manual_link" | "email" | "whatsapp" (future)
+  sentAt     DateTime @default(now())
+
+  @@index([invoiceId])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String   // "invoice_viewed" | "payment_received" | "invoice_overdue" | ...
+  payload   Json?
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId, readAt])
+}
+
+// ---------------------------------------------------------------------------
+// AUDIT LOG
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action    String   // "invoice_created" | "payment_recorded" | "login" | ...
+  entityType String?
+  entityId  String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// EMAIL OTP (ONE-TIME PASSWORDS)
+// ---------------------------------------------------------------------------
+
+model Otp {
+  id        String    @id @default(cuid())
+  email     String
+  codeHash  String
+  expiresAt DateTime
+  usedAt    DateTime?
+  attempts  Int       @default(0)
+  createdAt DateTime  @default(now())
+
+  @@index([email, expiresAt])
+}
