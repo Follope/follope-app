@@ -7,9 +7,9 @@ const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const BCRYPT_ROUNDS = 12;
 
 function getJwtSecret(): string {
-  const secret = process.env.AUTH_SECRET;
+  const secret = process.env.AUTH_SECRET || process.env.JWT_SECRET;
   if (!secret || secret.length < 32) {
-    throw new Error('AUTH_SECRET env var must be set and at least 32 chars');
+    throw new Error('AUTH_SECRET (or JWT_SECRET) env var must be set and at least 32 chars');
   }
   return secret;
 }
