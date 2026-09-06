@@ -26,9 +26,10 @@ const prisma = new PrismaClient({ adapter });
 const app = createApp(prisma);
 
 const port = Number(process.env.PORT ?? 3000);
+const host = '0.0.0.0';
 
-const server = app.listen(port, () => {
-  console.log(`Follope API listening on port ${port}`);
+const server = app.listen(port, host, () => {
+  console.log(`Follope API listening on ${host}:${port}`);
 });
 
 // Graceful shutdown handling

@@ -72,9 +72,9 @@ export function createEmailService(): EmailService {
         user: smtpUser,
         pass: smtpPass,
       },
-      connectionTimeout: 8000,
-      greetingTimeout: 8000,
-      socketTimeout: 10000,
+      connectionTimeout: 4000,
+      greetingTimeout: 4000,
+      socketTimeout: 5000,
     } as any);
 
     return transporter;
@@ -85,7 +85,34 @@ export function createEmailService(): EmailService {
 
   const emailService: EmailService = {
     async sendEmail(options: SendEmailOptions): Promise<boolean> {
-      // Option A: Send via Nodemailer SMTP (Hostinger, Gmail, SendGrid, etc.)
+      // Option A: Send via Resend REST API if configured (Uses HTTPS port 443 — never blocked by Render)
+      if (resendApiKey) {
+        try {
+          const res = await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${resendApiKey}`,
+            },
+            body: JSON.stringify({
+              from: fromAddress,
+              to: options.to,
+              subject: options.subject,
+              html: options.html,
+              text: options.text,
+            }),
+          });
+          if (res.ok) {
+            return true;
+          }
+          const err = await res.text();
+          console.error('[EmailService] Resend API error:', err);
+        } catch (err) {
+          console.error('[EmailService] Resend dispatch error:', err);
+        }
+      }
+
+      // Option B: Send via Nodemailer SMTP (Hostinger, Gmail, SendGrid, etc.)
       const activeTransporter = await resolveTransporter();
       if (activeTransporter) {
         try {
@@ -109,35 +136,6 @@ export function createEmailService(): EmailService {
           console.log(options.text);
           console.log('===================================================================\n');
           return true;
-        }
-      }
-
-      // Option B: Send via Resend REST API if configured
-      if (resendApiKey) {
-        try {
-          const res = await fetch('https://api.resend.com/emails', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${resendApiKey}`,
-            },
-            body: JSON.stringify({
-              from: fromAddress,
-              to: options.to,
-              subject: options.subject,
-              html: options.html,
-              text: options.text,
-            }),
-          });
-          if (!res.ok) {
-            const err = await res.text();
-            console.error('[EmailService] Resend API error:', err);
-            return false;
-          }
-          return true;
-        } catch (err) {
-          console.error('[EmailService] Resend dispatch error:', err);
-          return false;
         }
       }
 
