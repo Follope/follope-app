@@ -10,6 +10,7 @@ import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 import { createApp } from './app.js';
+import { startBackgroundReminderJobs } from './services/cronService.js';
 
 // 1. Initialize the PostgreSQL connection pool
 const pool = new Pool({
@@ -25,6 +26,9 @@ const prisma = new PrismaClient({ adapter });
 // 4. Inject prisma into the app factory
 const app = createApp(prisma);
 
+// 5. Start automated background reminder jobs
+const cronJobs = startBackgroundReminderJobs(prisma);
+
 const port = Number(process.env.PORT ?? 3000);
 const host = '0.0.0.0';
 
@@ -34,6 +38,7 @@ const server = app.listen(port, host, () => {
 
 // Graceful shutdown handling
 const shutdown = async () => {
+  cronJobs.stop();
   server.close(async () => {
     await prisma.$disconnect();
     await pool.end();

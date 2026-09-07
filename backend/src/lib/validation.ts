@@ -65,10 +65,10 @@ export const forgotPasswordVerifyOtpSchema = z.object({
 });
 
 export const clientSchema = z.object({
-  name: z.string().trim().min(1).max(200),
+  name: z.string().trim().min(1, 'Client name is required').max(200),
   company: z.string().trim().max(200).optional(),
-  email: z.string().trim().email().max(255).optional().or(z.literal('')),
-  phone: z.string().trim().max(30).optional(),
+  email: z.string().trim().email('Valid email is required').max(255).optional().or(z.literal('')),
+  phone: z.string().trim().min(10, 'Phone number must be at least 10 digits for WhatsApp').max(30),
   billingAddress: z.string().trim().max(1000).optional(),
   gstin: z.string().trim().max(20).optional(),
 });

@@ -76,6 +76,11 @@ export function createPaymentService(prisma: PrismaClient) {
             status,
             paidAt: status === 'PAID' ? new Date() : invoice.paidAt,
           },
+          include: {
+            client: true,
+            items: true,
+            revisions: { orderBy: { version: 'desc' } },
+          },
         });
 
         await tx.auditLog.create({
