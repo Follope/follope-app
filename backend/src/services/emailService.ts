@@ -1,6 +1,7 @@
 import nodemailer, { type Transporter } from 'nodemailer';
 import dns from 'node:dns';
 import net from 'node:net';
+import { sendViaGmailHttp, sendViaGmailWebhook, type GmailOAuthConfig } from './gmailHttpService.js';
 import {
   getOtpEmailTemplate,
   getWelcomeEmailTemplate,
@@ -80,12 +81,54 @@ export function createEmailService(): EmailService {
     return transporter;
   }
 
-  // 2. Optional Resend API fallback if RESEND_API_KEY is configured
+  // 1. Gmail HTTP REST API configuration (Port 443 — Bypasses cloud SMTP blocks)
+  const gmailClientId = process.env.GMAIL_CLIENT_ID;
+  const gmailClientSecret = process.env.GMAIL_CLIENT_SECRET;
+  const gmailRefreshToken = process.env.GMAIL_REFRESH_TOKEN;
+  const gmailUser = process.env.GMAIL_USER || process.env.SMTP_USER || 'follope.official@gmail.com';
+
+  const gmailOAuthConfig: GmailOAuthConfig | null =
+    gmailClientId && gmailClientSecret && gmailRefreshToken
+      ? {
+          clientId: gmailClientId,
+          clientSecret: gmailClientSecret,
+          refreshToken: gmailRefreshToken,
+          userEmail: gmailUser,
+        }
+      : null;
+
+  // 2. Google Apps Script Web App Webhook (HTTPS)
+  const gmailWebhookUrl = process.env.GMAIL_HTTP_WEBHOOK_URL;
+
+  // 3. Resend REST API (HTTPS)
   const resendApiKey = process.env.RESEND_API_KEY;
+
+  // 4. Brevo REST API (HTTPS)
+  const brevoApiKey = process.env.BREVO_API_KEY;
 
   const emailService: EmailService = {
     async sendEmail(options: SendEmailOptions): Promise<boolean> {
-      // Option A: Send via Resend REST API if configured (Uses HTTPS port 443 — never blocked by Render)
+      // Option 1: Send via official Google Gmail REST API (Over HTTPS port 443 — NEVER blocked by Render)
+      if (gmailOAuthConfig) {
+        try {
+          const ok = await sendViaGmailHttp({ from: fromAddress, ...options }, gmailOAuthConfig);
+          if (ok) return true;
+        } catch (err) {
+          console.error('[EmailService] Gmail HTTP REST API error:', err);
+        }
+      }
+
+      // Option 2: Send via Google Apps Script Web App Webhook (Over HTTPS)
+      if (gmailWebhookUrl) {
+        try {
+          const ok = await sendViaGmailWebhook({ from: fromAddress, ...options }, gmailWebhookUrl);
+          if (ok) return true;
+        } catch (err) {
+          console.error('[EmailService] Gmail Webhook error:', err);
+        }
+      }
+
+      // Option 3: Send via Resend REST API (HTTPS)
       if (resendApiKey) {
         try {
           const res = await fetch('https://api.resend.com/emails', {
@@ -112,7 +155,34 @@ export function createEmailService(): EmailService {
         }
       }
 
-      // Option B: Send via Nodemailer SMTP (Hostinger, Gmail, SendGrid, etc.)
+      // Option 4: Send via Brevo REST API (HTTPS)
+      if (brevoApiKey) {
+        try {
+          const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'api-key': brevoApiKey,
+            },
+            body: JSON.stringify({
+              sender: { email: fromAddress.includes('<') ? fromAddress.match(/<([^>]+)>/)?.[1] || 'support@follope.com' : fromAddress },
+              to: [{ email: options.to }],
+              subject: options.subject,
+              htmlContent: options.html,
+              textContent: options.text,
+            }),
+          });
+          if (res.ok) {
+            return true;
+          }
+          const err = await res.text();
+          console.error('[EmailService] Brevo API error:', err);
+        } catch (err) {
+          console.error('[EmailService] Brevo dispatch error:', err);
+        }
+      }
+
+      // Option 5: Send via Nodemailer SMTP (For environments where SMTP outbound is open)
       const activeTransporter = await resolveTransporter();
       if (activeTransporter) {
         try {
