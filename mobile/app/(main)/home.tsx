@@ -2,8 +2,8 @@ import { useEffect } from 'react';
 import { View, Text, ScrollView, RefreshControl, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ArrowUpRight, FilePlus2, Plus, WalletCards, Bell } from 'lucide-react-native';
-import { useCashFlowAnalytics, useDashboard, useNotifications, useCheckReminders } from '../../lib/queries';
+import { ArrowUpRight, FilePlus2, Plus, WalletCards, Bell, Crown } from 'lucide-react-native';
+import { useCashFlowAnalytics, useDashboard, useNotifications, useCheckReminders, useSubscription } from '../../lib/queries';
 import { useAuthStore } from '../../lib/authStore';
 import { formatRupees } from '../../lib/schemas';
 import { StatusBadge } from '../../components/StatusBadge';
@@ -23,6 +23,7 @@ export default function HomeScreen() {
   const { data, isLoading, isRefetching, refetch } = useDashboard();
   const { data: analytics } = useCashFlowAnalytics();
   const { data: notifData } = useNotifications();
+  const { data: subDetails } = useSubscription();
   const checkReminders = useCheckReminders();
   const contentStyle = useReadableContentWidth();
   const invoiceCount = data?.invoiceCount ?? 0;
@@ -48,20 +49,42 @@ export default function HomeScreen() {
             <Text className="text-neutral-600 dark:text-neutral-400 text-sm mt-1">Here’s your cash-flow snapshot.</Text>
           </View>
 
-          <Pressable
-            onPress={() => router.push('/(main)/notifications')}
-            className="w-11 h-11 rounded-2xl bg-neutral-100 dark:bg-card border border-neutral-200 dark:border-border items-center justify-center relative"
-            accessibilityLabel="Notifications"
-          >
-            <Bell size={20} color="#737373" />
-            {unreadCount > 0 && (
-              <View className="absolute -top-1 -right-1 bg-red-500 rounded-full min-w-[18px] h-[18px] px-1 items-center justify-center border-2 border-white dark:border-background">
-                <Text className="text-[10px] font-bold text-white leading-none">
-                  {unreadCount > 9 ? '9+' : unreadCount}
+          <View className="flex-row items-center">
+            {subDetails && (
+              <Pressable
+                onPress={() => router.push('/(main)/settings/subscription')}
+                className={`px-3 py-1.5 rounded-xl flex-row items-center mr-2.5 ${
+                  subDetails.isPro
+                    ? 'bg-orange-500/15 border border-orange-500/30'
+                    : 'bg-orange-500 active:bg-orange-600 shadow-sm'
+                }`}
+              >
+                <Crown color={subDetails.isPro ? '#FF7A00' : '#FFFFFF'} size={13} />
+                <Text
+                  className={`text-xs font-bold ml-1 ${
+                    subDetails.isPro ? 'text-orange-500' : 'text-white'
+                  }`}
+                >
+                  {subDetails.isPro ? 'PRO' : 'Get Pro'}
                 </Text>
-              </View>
+              </Pressable>
             )}
-          </Pressable>
+
+            <Pressable
+              onPress={() => router.push('/(main)/notifications')}
+              className="w-11 h-11 rounded-2xl bg-neutral-100 dark:bg-card border border-neutral-200 dark:border-border items-center justify-center relative"
+              accessibilityLabel="Notifications"
+            >
+              <Bell size={20} color="#737373" />
+              {unreadCount > 0 && (
+                <View className="absolute -top-1 -right-1 bg-red-500 rounded-full min-w-[18px] h-[18px] px-1 items-center justify-center border-2 border-white dark:border-background">
+                  <Text className="text-[10px] font-bold text-white leading-none">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </Text>
+                </View>
+              )}
+            </Pressable>
+          </View>
         </View>
 
         <View className="bg-primary rounded-3xl p-5 mt-6 overflow-hidden">
@@ -101,13 +124,40 @@ export default function HomeScreen() {
 
         <Pressable
           onPress={() => router.push('/(main)/invoices/create')}
-          className="bg-primary rounded-2xl h-14 flex-row items-center justify-center mb-8 active:bg-primary-dark"
+          className="bg-primary rounded-2xl h-14 flex-row items-center justify-center mb-4 active:bg-primary-dark"
           accessibilityRole="button"
           accessibilityLabel="Create a new invoice"
         >
           <Plus color="white" size={20} />
           <Text className="text-white font-semibold text-base ml-2">Create Invoice</Text>
         </Pressable>
+
+        {subDetails && !subDetails.isPro && (
+          <Pressable
+            onPress={() => router.push('/(main)/settings/subscription')}
+            className="mb-8 p-4 rounded-2xl bg-orange-500/10 border border-orange-500/25 flex-row items-center justify-between"
+          >
+            <View className="flex-row items-center flex-1 mr-3">
+              <View className="w-10 h-10 rounded-xl bg-orange-500/20 items-center justify-center mr-3">
+                <Crown color="#FF7A00" size={20} />
+              </View>
+              <View className="flex-1">
+                <View className="flex-row items-center">
+                  <Text className="text-xs font-bold text-neutral-900 dark:text-white">Follope Free Plan</Text>
+                  <Text className="text-[10px] font-bold text-orange-500 ml-2">
+                    {subDetails.lifetimeInvoiceCount}/{subDetails.freeInvoiceLimit} Invoices Used
+                  </Text>
+                </View>
+                <Text className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5" numberOfLines={1}>
+                  Upgrade to Pro for unlimited invoices & zero watermark
+                </Text>
+              </View>
+            </View>
+            <View className="px-3 py-1.5 rounded-xl bg-orange-500 flex-row items-center shadow-sm">
+              <Text className="text-xs font-bold text-white">Upgrade</Text>
+            </View>
+          </Pressable>
+        )}
 
         {analytics ? (
           <View className="bg-neutral-50 dark:bg-card border border-neutral-200 dark:border-border rounded-2xl p-4 mb-7">

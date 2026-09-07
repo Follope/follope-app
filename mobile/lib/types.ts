@@ -149,6 +149,11 @@ export interface SubscriptionDetails {
   remainingInvoices: number;
   maxInvoiceEdits: number;
   expiresAt: string | null;
+  pricing?: {
+    proMonthlyPaise: number;
+    proAnnualPaise: number;
+    lifetimePaise: number;
+  };
 }
 
 export interface ReferralItem {

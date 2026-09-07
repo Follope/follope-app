@@ -15,6 +15,7 @@ export default function SettingsLayout() {
       <Stack.Screen name="change-password" options={{ title: 'Change Password' }} />
       <Stack.Screen name="sessions" options={{ title: 'Active Sessions' }} />
       <Stack.Screen name="appearance" options={{ title: 'Appearance' }} />
+      <Stack.Screen name="subscription" options={{ title: 'Subscription & Plans' }} />
     </Stack>
   );
 }

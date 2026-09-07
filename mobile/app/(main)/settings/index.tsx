@@ -11,6 +11,7 @@ import { api, ApiError } from '../../../lib/api';
 import { confirmAction, showAlert } from '../../../lib/alert';
 import { registerForPushNotificationsAsync } from '../../../lib/notifications';
 import { useSubscription, useReferral, useRedeemCoupon } from '../../../lib/queries';
+import { UpgradeModal } from '../../../components/UpgradeModal';
 
 function SettingsRow({ label, value, onPress }: { label: string; value?: string; onPress?: () => void }) {
   return (
@@ -49,6 +50,7 @@ export default function SettingsScreen() {
   const { data: subDetails, refetch: refetchSub } = useSubscription();
   const { data: referral } = useReferral();
   const redeemCoupon = useRedeemCoupon();
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
   const [redeemModalOpen, setRedeemModalOpen] = useState(false);
   const [couponInput, setCouponInput] = useState('');
   const [redeemError, setRedeemError] = useState<string | null>(null);
@@ -157,13 +159,24 @@ export default function SettingsScreen() {
                 <Text className="text-lg font-bold text-white mt-0.5">{planName}</Text>
               </View>
             </View>
-            <Pressable
-              onPress={() => setRedeemModalOpen(true)}
-              className="px-3 py-1.5 rounded-lg bg-orange-500/20 border border-orange-500/30 flex-row items-center"
-            >
-              <Sparkles color="#FF7A00" size={12} />
-              <Text className="text-xs font-bold text-orange-400 ml-1.5">Redeem Promo</Text>
-            </Pressable>
+            <View className="flex-row items-center">
+              <Pressable
+                onPress={() => setRedeemModalOpen(true)}
+                className="px-2.5 py-1.5 rounded-lg bg-neutral-800 border border-neutral-700 flex-row items-center mr-2"
+              >
+                <Sparkles color="#A3A3A3" size={12} />
+                <Text className="text-xs font-medium text-neutral-300 ml-1">Promo</Text>
+              </Pressable>
+              {!isPro && (
+                <Pressable
+                  onPress={() => setUpgradeModalOpen(true)}
+                  className="px-3 py-1.5 rounded-lg bg-orange-500 active:bg-orange-600 flex-row items-center shadow-md shadow-orange-500/20"
+                >
+                  <Crown color="#FFFFFF" size={12} />
+                  <Text className="text-xs font-bold text-white ml-1">Get Pro</Text>
+                </Pressable>
+              )}
+            </View>
           </View>
 
           {/* QUOTA BAR FOR FREE TIER */}
@@ -184,6 +197,15 @@ export default function SettingsScreen() {
               <Text className="text-[11px] text-neutral-500 mt-2">
                 • 1 edit revision allowed per invoice on Free tier
               </Text>
+              <Pressable
+                onPress={() => setUpgradeModalOpen(true)}
+                className="mt-3 w-full py-2.5 rounded-xl bg-orange-500/20 border border-orange-500/30 flex-row items-center justify-center"
+              >
+                <Crown color="#FF7A00" size={14} />
+                <Text className="text-xs font-bold text-orange-400 ml-1.5">
+                  Upgrade to Unlimited Invoices & Edits →
+                </Text>
+              </Pressable>
             </View>
           )}
 
@@ -240,6 +262,18 @@ export default function SettingsScreen() {
             </View>
           )}
         </View>
+
+        <SettingsSection title="Subscription & Plans">
+          <SettingsRow
+            label="View Plans & Pricing"
+            value={isPro ? 'Pro Active' : 'Get Pro'}
+            onPress={() => router.push('/(main)/settings/subscription')}
+          />
+          <SettingsRow
+            label="Redeem Promo Code"
+            onPress={() => setRedeemModalOpen(true)}
+          />
+        </SettingsSection>
 
         <SettingsSection title="Profile">
           <SettingsRow label="Name" value={user?.name} />
@@ -338,6 +372,14 @@ export default function SettingsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* MODAL: UPGRADE TO PRO */}
+      <UpgradeModal
+        visible={upgradeModalOpen}
+        onClose={() => setUpgradeModalOpen(false)}
+        onOpenRedeem={() => setRedeemModalOpen(true)}
+        subscription={subDetails}
+      />
     </SafeAreaView>
   );
 }

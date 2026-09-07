@@ -10,6 +10,11 @@ export interface UserSubscriptionDetails {
   remainingInvoices: number;
   maxInvoiceEdits: number;
   expiresAt: Date | null;
+  pricing?: {
+    proMonthlyPaise: number;
+    proAnnualPaise: number;
+    lifetimePaise: number;
+  };
 }
 
 /**
@@ -94,6 +99,11 @@ export async function getUserSubscription(
     remainingInvoices,
     maxInvoiceEdits: isPro ? 999999 : (config.freeMaxInvoiceEdits ?? (config as any).maxInvoiceEdits ?? 1),
     expiresAt: subscription.expiresAt,
+    pricing: {
+      proMonthlyPaise: config.proMonthlyPricePaise ?? 29900,
+      proAnnualPaise: config.proAnnualPricePaise ?? 249900,
+      lifetimePaise: (config as any).lifetimePricePaise ?? 499900,
+    },
   };
 }
 
