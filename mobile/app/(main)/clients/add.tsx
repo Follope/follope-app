@@ -35,18 +35,19 @@ export default function AddClientScreen() {
       <ScrollView contentContainerClassName="px-6 pt-4 pb-8" keyboardShouldPersistTaps="handled">
         <Text className="text-2xl font-bold text-neutral-900 dark:text-white mb-6">Add Client</Text>
 
-        <FormInput control={control} name="name" label="Client name" />
-        <FormInput control={control} name="company" label="Company (optional)" />
+        <FormInput control={control} name="name" label="Client name *" placeholder="e.g. Acme Corp / Rahul Sharma" />
+        <FormInput control={control} name="phone" label="Phone number * (required for WhatsApp)" placeholder="e.g. 9876543210" keyboardType="phone-pad" />
+        <FormInput control={control} name="company" label="Company (optional)" placeholder="e.g. Studio X" />
         <FormInput
           control={control}
           name="email"
           label="Email (optional)"
+          placeholder="client@example.com"
           keyboardType="email-address"
           autoCapitalize="none"
         />
-        <FormInput control={control} name="phone" label="Phone (optional)" keyboardType="phone-pad" />
         <FormInput control={control} name="billingAddress" label="Billing address (optional)" multiline />
-        <FormInput control={control} name="gstin" label="GSTIN (optional)" autoCapitalize="characters" />
+        <FormInput control={control} name="gstin" label="GSTIN (optional)" placeholder="22AAAAA0000A1Z5" autoCapitalize="characters" />
 
         {formError && <Text className="text-sm text-red-500 mb-4">{formError}</Text>}
 

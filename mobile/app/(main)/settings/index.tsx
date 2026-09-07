@@ -8,8 +8,7 @@ import { useThemeStore } from '../../../lib/themeStore';
 import { useAuthStore, getStoredRefreshToken } from '../../../lib/authStore';
 import { api } from '../../../lib/api';
 import { confirmAction, showAlert } from '../../../lib/alert';
-import { registerForPushNotificationsAsync, triggerLocalNotification } from '../../../lib/notifications';
-import { useSendTestNotification } from '../../../lib/queries';
+import { registerForPushNotificationsAsync } from '../../../lib/notifications';
 
 function SettingsRow({ label, value, onPress }: { label: string; value?: string; onPress?: () => void }) {
   return (
@@ -42,9 +41,7 @@ export default function SettingsScreen() {
   const clearSession = useAuthStore((s) => s.clearSession);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [notifPermission, setNotifPermission] = useState<string>('Checking…');
-  const [isTestingNotif, setIsTestingNotif] = useState(false);
   const themePreference = useThemeStore((state) => state.preference);
-  const sendTestNotification = useSendTestNotification();
 
   useEffect(() => {
     void Notifications.getPermissionsAsync().then(({ status }) => {
@@ -61,28 +58,6 @@ export default function SettingsScreen() {
       showAlert('Notifications Enabled', 'You will now receive alerts for overdue invoices, invoice views, and payments.');
     } else {
       showAlert('Permission Required', 'Please enable notification permissions in your device settings to receive alerts.');
-    }
-  };
-
-  const handleSendTestNotification = async () => {
-    setIsTestingNotif(true);
-    try {
-      // 1. Immediately trigger native local notification banner
-      await triggerLocalNotification({
-        title: 'Follope Alert',
-        body: 'Mobile notifications are active! You will be notified when clients view invoices or make payments.',
-        data: { screen: 'notifications' },
-        channelId: 'reminders',
-      });
-
-      // 2. Also trigger backend push service test
-      await sendTestNotification.mutateAsync().catch(() => null);
-
-      showAlert('Test Notification Sent', 'A notification banner has been dispatched to your device.');
-    } catch (err) {
-      showAlert('Notice', 'Could not dispatch test notification. Please ensure permissions are granted.');
-    } finally {
-      setIsTestingNotif(false);
     }
   };
 
@@ -133,11 +108,6 @@ export default function SettingsScreen() {
             label="Device notifications"
             value={notifPermission}
             onPress={notifPermission !== 'Enabled' ? handleRequestPermission : undefined}
-          />
-          <SettingsRow
-            label="Send test notification"
-            value={isTestingNotif ? 'Sending…' : undefined}
-            onPress={handleSendTestNotification}
           />
         </SettingsSection>
 

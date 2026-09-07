@@ -229,7 +229,7 @@ export default function ClientDetailScreen() {
 
                 <FormInput control={control} name="name" label="Client or Contact Name *" placeholder="e.g. Rahul Sharma" />
                 <FormInput control={control} name="company" label="Company Name (optional)" placeholder="e.g. Acme Media" />
-                <FormInput control={control} name="phone" label="WhatsApp Phone Number" placeholder="e.g. +91 9876543210" keyboardType="phone-pad" />
+                <FormInput control={control} name="phone" label="WhatsApp Phone Number *" placeholder="e.g. 9876543210" keyboardType="phone-pad" />
                 <FormInput control={control} name="email" label="Email Address" placeholder="e.g. client@example.com" keyboardType="email-address" autoCapitalize="none" />
                 <FormInput control={control} name="billingAddress" label="Billing Address" placeholder="Address, City, State, PIN" multiline numberOfLines={3} />
                 <FormInput control={control} name="gstin" label="GSTIN (optional)" placeholder="22AAAAA0000A1Z5" autoCapitalize="characters" />

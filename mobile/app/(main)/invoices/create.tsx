@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, Pressable, TextInput, Modal } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useForm, useFieldArray, Controller } from 'react-hook-form';
+import { View, Text, ScrollView, Pressable, TextInput, Modal, KeyboardAvoidingView, Platform } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useForm, useFieldArray, Controller, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useRouter } from 'expo-router';
 import { Plus, Trash2, ChevronDown } from 'lucide-react-native';
@@ -21,11 +21,11 @@ import { useReadableContentWidth } from '../../../lib/layout';
  * would be a UX bug, not a financial-integrity bug.
  */
 function calculatePreviewTotal(items: CreateInvoiceInput['items']): number {
-  return items.reduce((sum, item) => {
-    const gross = Math.round((item.quantity || 0) * (item.unitPricePaise || 0));
-    const discount = item.discountPaise ?? 0;
+  return (items || []).reduce((sum, item) => {
+    const gross = Math.round((Number(item?.quantity) || 0) * (Number(item?.unitPricePaise) || 0));
+    const discount = Number(item?.discountPaise) || 0;
     const taxable = Math.max(gross - discount, 0);
-    const tax = Math.round((taxable * (item.taxRateBps ?? 0)) / 10000);
+    const tax = Math.round((taxable * (Number(item?.taxRateBps) || 0)) / 10000);
     return sum + taxable + tax;
   }, 0);
 }
@@ -38,6 +38,7 @@ function defaultDueDate(days = 7): string {
 
 export default function CreateInvoiceScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { data: clients } = useClients();
   const { data: business } = useBusiness();
   const createInvoice = useCreateInvoice();
@@ -47,7 +48,7 @@ export default function CreateInvoiceScreen() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [invoiceToCreate, setInvoiceToCreate] = useState<CreateInvoiceInput | null>(null);
 
-  const { control, handleSubmit, watch, setValue, formState } = useForm<CreateInvoiceInput>({
+  const { control, handleSubmit, setValue, formState } = useForm<CreateInvoiceInput>({
     resolver: zodResolver(createInvoiceSchema),
     defaultValues: {
       clientId: '',
@@ -58,7 +59,7 @@ export default function CreateInvoiceScreen() {
   });
 
   const { fields, append, remove } = useFieldArray({ control, name: 'items' });
-  const items = watch('items');
+  const items = useWatch({ control, name: 'items' });
   const previewTotal = useMemo(() => calculatePreviewTotal(items), [items]);
   const contentStyle = useReadableContentWidth();
 
@@ -97,148 +98,164 @@ export default function CreateInvoiceScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-white dark:bg-background">
-      <ScrollView contentContainerClassName="px-6 pt-4 pb-8" contentContainerStyle={contentStyle} keyboardShouldPersistTaps="handled">
-        <Text className="text-2xl font-bold text-neutral-900 dark:text-white mb-6">Create Invoice</Text>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1">
+        <ScrollView contentContainerClassName="px-6 pt-4 pb-8" contentContainerStyle={contentStyle} keyboardShouldPersistTaps="handled">
+          <Text className="text-2xl font-bold text-neutral-900 dark:text-white mb-6">Create Invoice</Text>
 
-        {/* Client picker */}
-        <Text className="text-sm text-neutral-600 dark:text-neutral-400 mb-1.5">Client</Text>
-        <Pressable
-          onPress={() => setClientPickerOpen(true)}
-          className="h-12 rounded-xl bg-neutral-50 dark:bg-card border border-neutral-200 dark:border-border px-4 flex-row items-center justify-between mb-1"
-        >
-          <Text className={selectedClient ? 'text-neutral-900 dark:text-white' : 'text-neutral-500'}>
-            {selectedClient?.name ?? 'Select a client'}
-          </Text>
-          <ChevronDown color="#6B6B6B" size={18} />
-        </Pressable>
-        <View className="mb-4" />
+          {/* Client picker */}
+          <Text className="text-sm text-neutral-600 dark:text-neutral-400 mb-1.5">Client</Text>
+          <Pressable
+            onPress={() => setClientPickerOpen(true)}
+            className="h-12 rounded-xl bg-neutral-50 dark:bg-card border border-neutral-200 dark:border-border px-4 flex-row items-center justify-between mb-1"
+          >
+            <Text className={selectedClient ? 'text-neutral-900 dark:text-white' : 'text-neutral-500'}>
+              {selectedClient?.name ?? 'Select a client'}
+            </Text>
+            <ChevronDown color="#6B6B6B" size={18} />
+          </Pressable>
+          <View className="mb-4" />
 
-        <FormInput control={control} name="dueDate" label="Due date (YYYY-MM-DD)" />
+          <FormInput control={control} name="dueDate" label="Due date (YYYY-MM-DD)" />
 
-        {/* Line items */}
-        <Text className="text-neutral-900 dark:text-white font-semibold text-base mb-3 mt-2">Items</Text>
-        {fields.map((field, index) => (
-          <View key={field.id} className="bg-neutral-50 dark:bg-card border border-neutral-200 dark:border-border rounded-2xl p-4 mb-3">
-            <Controller
-              control={control}
-              name={`items.${index}.description`}
-              render={({ field: { onChange, value }, fieldState: { error } }) => (
-                <>
-                  <TextInput
-                    value={value}
-                    onChangeText={onChange}
-                    placeholder="Item description"
-                    placeholderTextColor="#6B6B6B"
-                    className="text-neutral-900 dark:text-white text-base mb-3"
+          {/* Line items */}
+          <Text className="text-neutral-900 dark:text-white font-semibold text-base mb-3 mt-2">Items</Text>
+          {fields.map((field, index) => (
+            <View key={field.id} className="bg-neutral-50 dark:bg-card border border-neutral-200 dark:border-border rounded-2xl p-4 mb-3">
+              <Controller
+                control={control}
+                name={`items.${index}.description`}
+                render={({ field: { onChange, value }, fieldState: { error } }) => (
+                  <>
+                    <TextInput
+                      value={value}
+                      onChangeText={onChange}
+                      placeholder="Item description"
+                      placeholderTextColor="#6B6B6B"
+                      cursorColor="#FF7A00"
+                      selectionColor="#FF7A00"
+                      className="text-neutral-900 dark:text-white text-base mb-3"
+                    />
+                    {error && <Text className="text-xs text-red-500 mb-2">{error.message}</Text>}
+                  </>
+                )}
+              />
+
+              <View className="flex-row gap-3 mb-2">
+                <View className="flex-1">
+                  <Text className="text-xs text-neutral-500 mb-1">Qty</Text>
+                  <Controller
+                    control={control}
+                    name={`items.${index}.quantity`}
+                    render={({ field: { onChange, value } }) => (
+                      <TextInput
+                        value={String(value ?? '')}
+                        onChangeText={(t) => onChange(Number(t) || 0)}
+                        keyboardType="decimal-pad"
+                        placeholderTextColor="#6B6B6B"
+                        cursorColor="#FF7A00"
+                        selectionColor="#FF7A00"
+                        style={{ textAlignVertical: 'center', includeFontPadding: false }}
+                        className="h-11 rounded-lg bg-white dark:bg-background border border-neutral-200 dark:border-border px-3 py-1 text-neutral-900 dark:text-white"
+                      />
+                    )}
                   />
-                  {error && <Text className="text-xs text-red-500 mb-2">{error.message}</Text>}
-                </>
+                </View>
+                <View className="flex-1">
+                  <Text className="text-xs text-neutral-500 mb-1">Unit price (₹)</Text>
+                  <Controller
+                    control={control}
+                    name={`items.${index}.unitPricePaise`}
+                    render={({ field: { onChange, value } }) => (
+                      <TextInput
+                        value={value ? String(value / 100) : ''}
+                        onChangeText={(t) => onChange(rupeesToPaise(Number(t) || 0))}
+                        keyboardType="decimal-pad"
+                        placeholderTextColor="#6B6B6B"
+                        cursorColor="#FF7A00"
+                        selectionColor="#FF7A00"
+                        style={{ textAlignVertical: 'center', includeFontPadding: false }}
+                        className="h-11 rounded-lg bg-white dark:bg-background border border-neutral-200 dark:border-border px-3 py-1 text-neutral-900 dark:text-white"
+                      />
+                    )}
+                  />
+                </View>
+              </View>
+
+              <View className="flex-row gap-3">
+                <View className="flex-1">
+                  <Text className="text-xs text-neutral-500 mb-1">Discount (₹)</Text>
+                  <Controller
+                    control={control}
+                    name={`items.${index}.discountPaise`}
+                    render={({ field: { onChange, value } }) => (
+                      <TextInput
+                        value={value ? String(value / 100) : ''}
+                        onChangeText={(t) => onChange(rupeesToPaise(Number(t) || 0))}
+                        keyboardType="decimal-pad"
+                        placeholder="0"
+                        placeholderTextColor="#6B6B6B"
+                        cursorColor="#FF7A00"
+                        selectionColor="#FF7A00"
+                        style={{ textAlignVertical: 'center', includeFontPadding: false }}
+                        className="h-11 rounded-lg bg-white dark:bg-background border border-neutral-200 dark:border-border px-3 py-1 text-neutral-900 dark:text-white"
+                      />
+                    )}
+                  />
+                </View>
+                <View className="flex-1">
+                  <Text className="text-xs text-neutral-500 mb-1">Tax %</Text>
+                  <Controller
+                    control={control}
+                    name={`items.${index}.taxRateBps`}
+                    render={({ field: { onChange, value } }) => (
+                      <TextInput
+                        value={value ? String(value / 100) : ''}
+                        onChangeText={(t) => onChange(Math.round((Number(t) || 0) * 100))}
+                        keyboardType="decimal-pad"
+                        placeholder="0"
+                        placeholderTextColor="#6B6B6B"
+                        cursorColor="#FF7A00"
+                        selectionColor="#FF7A00"
+                        style={{ textAlignVertical: 'center', includeFontPadding: false }}
+                        className="h-11 rounded-lg bg-white dark:bg-background border border-neutral-200 dark:border-border px-3 py-1 text-neutral-900 dark:text-white"
+                      />
+                    )}
+                  />
+                </View>
+              </View>
+
+              {fields.length > 1 && (
+                <Pressable onPress={() => remove(index)} className="flex-row items-center mt-3 self-start">
+                  <Trash2 color="#EF4444" size={16} />
+                  <Text className="text-red-500 text-sm ml-1.5">Remove item</Text>
+                </Pressable>
               )}
-            />
-
-            <View className="flex-row gap-3 mb-2">
-              <View className="flex-1">
-                <Text className="text-xs text-neutral-500 mb-1">Qty</Text>
-                <Controller
-                  control={control}
-                  name={`items.${index}.quantity`}
-                  render={({ field: { onChange, value } }) => (
-                    <TextInput
-                      value={String(value ?? '')}
-                      onChangeText={(t) => onChange(Number(t) || 0)}
-                      keyboardType="decimal-pad"
-                      placeholderTextColor="#6B6B6B"
-                      className="h-10 rounded-lg bg-white dark:bg-background border border-neutral-200 dark:border-border px-3 text-neutral-900 dark:text-white"
-                    />
-                  )}
-                />
-              </View>
-              <View className="flex-1">
-                <Text className="text-xs text-neutral-500 mb-1">Unit price (₹)</Text>
-                <Controller
-                  control={control}
-                  name={`items.${index}.unitPricePaise`}
-                  render={({ field: { onChange, value } }) => (
-                    <TextInput
-                      value={value ? String(value / 100) : ''}
-                      onChangeText={(t) => onChange(rupeesToPaise(Number(t) || 0))}
-                      keyboardType="decimal-pad"
-                      placeholderTextColor="#6B6B6B"
-                      className="h-10 rounded-lg bg-white dark:bg-background border border-neutral-200 dark:border-border px-3 text-neutral-900 dark:text-white"
-                    />
-                  )}
-                />
-              </View>
             </View>
+          ))}
 
-            <View className="flex-row gap-3">
-              <View className="flex-1">
-                <Text className="text-xs text-neutral-500 mb-1">Discount (₹)</Text>
-                <Controller
-                  control={control}
-                  name={`items.${index}.discountPaise`}
-                  render={({ field: { onChange, value } }) => (
-                    <TextInput
-                      value={value ? String(value / 100) : ''}
-                      onChangeText={(t) => onChange(rupeesToPaise(Number(t) || 0))}
-                      keyboardType="decimal-pad"
-                      placeholder="0"
-                      placeholderTextColor="#6B6B6B"
-                      className="h-10 rounded-lg bg-white dark:bg-background border border-neutral-200 dark:border-border px-3 text-neutral-900 dark:text-white"
-                    />
-                  )}
-                />
-              </View>
-              <View className="flex-1">
-                <Text className="text-xs text-neutral-500 mb-1">Tax %</Text>
-                <Controller
-                  control={control}
-                  name={`items.${index}.taxRateBps`}
-                  render={({ field: { onChange, value } }) => (
-                    <TextInput
-                      value={value ? String(value / 100) : ''}
-                      onChangeText={(t) => onChange(Math.round((Number(t) || 0) * 100))}
-                      keyboardType="decimal-pad"
-                      placeholder="0"
-                      placeholderTextColor="#6B6B6B"
-                      className="h-10 rounded-lg bg-white dark:bg-background border border-neutral-200 dark:border-border px-3 text-neutral-900 dark:text-white"
-                    />
-                  )}
-                />
-              </View>
-            </View>
+          <Pressable
+            onPress={() => append({ description: '', quantity: 1, unitPricePaise: 0, discountPaise: 0, taxRateBps: 0 })}
+            className="flex-row items-center justify-center border border-dashed border-neutral-200 dark:border-border rounded-xl py-3 mb-6"
+          >
+            <Plus color="#FF7A00" size={18} />
+            <Text className="text-primary font-medium ml-2">Add item</Text>
+          </Pressable>
 
-            {fields.length > 1 && (
-              <Pressable onPress={() => remove(index)} className="flex-row items-center mt-3 self-start">
-                <Trash2 color="#EF4444" size={16} />
-                <Text className="text-red-500 text-sm ml-1.5">Remove item</Text>
-              </Pressable>
-            )}
+          <FormInput control={control} name="notes" label="Notes (visible to your client)" multiline />
+
+          <View className="bg-neutral-50 dark:bg-card border border-neutral-200 dark:border-border rounded-2xl p-4 mb-6 flex-row justify-between items-center">
+            <Text className="text-neutral-600 dark:text-neutral-400">Estimated total</Text>
+            <Text className="text-neutral-900 dark:text-white text-xl font-bold">{formatRupees(previewTotal)}</Text>
           </View>
-        ))}
 
-        <Pressable
-          onPress={() => append({ description: '', quantity: 1, unitPricePaise: 0, discountPaise: 0, taxRateBps: 0 })}
-          className="flex-row items-center justify-center border border-dashed border-neutral-200 dark:border-border rounded-xl py-3 mb-6"
-        >
-          <Plus color="#FF7A00" size={18} />
-          <Text className="text-primary font-medium ml-2">Add item</Text>
-        </Pressable>
+          {formError && <Text className="text-sm text-red-500 mb-4">{formError}</Text>}
 
-        <FormInput control={control} name="notes" label="Notes (visible to your client)" multiline />
-
-        <View className="bg-neutral-50 dark:bg-card border border-neutral-200 dark:border-border rounded-2xl p-4 mb-6 flex-row justify-between items-center">
-          <Text className="text-neutral-600 dark:text-neutral-400">Estimated total</Text>
-          <Text className="text-neutral-900 dark:text-white text-xl font-bold">{formatRupees(previewTotal)}</Text>
-        </View>
-
-        {formError && <Text className="text-sm text-red-500 mb-4">{formError}</Text>}
-
-        <Button label="Review Invoice" onPress={handleSubmit(onReview)} />
-        <Text className="text-neutral-500 text-xs text-center mt-3">
-          Review the totals before creating your invoice.
-        </Text>
-      </ScrollView>
+          <Button label="Review Invoice" onPress={handleSubmit(onReview)} />
+          <Text className="text-neutral-500 text-xs text-center mt-3">
+            Review the totals before creating your invoice.
+          </Text>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       <Modal visible={clientPickerOpen} animationType="slide" onRequestClose={() => setClientPickerOpen(false)}>
         <SafeAreaView className="flex-1 bg-white dark:bg-background px-6 pt-4">
@@ -278,7 +295,10 @@ export default function CreateInvoiceScreen() {
 
       <Modal visible={previewOpen} animationType="slide" transparent onRequestClose={() => setPreviewOpen(false)}>
         <View className="flex-1 bg-black/60 justify-end">
-          <View className="bg-neutral-50 dark:bg-card rounded-t-3xl px-6 pt-6 pb-10 max-h-[88%]">
+          <View
+            className="bg-neutral-50 dark:bg-card rounded-t-3xl px-6 pt-6 max-h-[88%]"
+            style={{ paddingBottom: Math.max(insets.bottom + 16, 28) }}
+          >
             <View className="w-10 h-1 rounded-full bg-border self-center mb-5" />
             <Text className="text-neutral-900 dark:text-white text-xl font-bold">Review invoice</Text>
             <Text className="text-neutral-600 dark:text-neutral-400 text-sm mt-1 mb-5">Check the details before creating it.</Text>
@@ -317,8 +337,12 @@ export default function CreateInvoiceScreen() {
               disabled={!invoiceToCreate}
               onPress={() => invoiceToCreate && onSubmit(invoiceToCreate)}
             />
-            <Pressable onPress={() => setPreviewOpen(false)} disabled={createInvoice.isPending} className="items-center mt-4">
-              <Text className="text-neutral-600 dark:text-neutral-400 font-medium">Edit invoice</Text>
+            <Pressable
+              onPress={() => setPreviewOpen(false)}
+              disabled={createInvoice.isPending}
+              className="items-center mt-3 py-2.5 rounded-xl border border-neutral-200 dark:border-border active:bg-neutral-100"
+            >
+              <Text className="text-neutral-700 dark:text-neutral-300 font-medium">Edit invoice</Text>
             </Pressable>
           </View>
         </View>

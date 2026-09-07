@@ -60,7 +60,7 @@ export const clientSchema = z.object({
   name: z.string().trim().min(1, 'Client name is required').max(200),
   company: z.string().trim().max(200).optional(),
   email: z.string().trim().email('Enter a valid email').optional().or(z.literal('')),
-  phone: z.string().trim().max(30).optional(),
+  phone: z.string().trim().min(10, 'Enter a valid 10-digit phone number for WhatsApp reminders').max(30),
   billingAddress: z.string().trim().max(1000).optional(),
   gstin: z.string().trim().max(20).optional(),
 });

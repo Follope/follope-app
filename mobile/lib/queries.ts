@@ -98,8 +98,21 @@ export function useRecordPayment(invoiceId: string) {
   return useMutation({
     mutationFn: (input: RecordPaymentInput) =>
       api.post<{ payment: Payment; invoice: Invoice }>(`/invoices/${invoiceId}/payments`, input),
-    onSuccess: ({ invoice }) => {
-      queryClient.setQueryData(['invoices', invoiceId], invoice);
+    onSuccess: (data) => {
+      if (data?.invoice) {
+        queryClient.setQueryData(['invoices', invoiceId], (prev: any) => {
+          if (!prev) return data.invoice;
+          return {
+            ...prev,
+            ...data.invoice,
+            client: data.invoice.client ?? prev.client,
+            items: data.invoice.items ?? prev.items,
+            revisions: data.invoice.revisions ?? prev.revisions,
+          };
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: ['invoices', invoiceId] });
+      queryClient.invalidateQueries({ queryKey: ['invoices', invoiceId, 'payments'] });
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     },

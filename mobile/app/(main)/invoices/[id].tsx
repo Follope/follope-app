@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { View, Text, ScrollView, Pressable, Share, ActivityIndicator, Modal, TextInput, Platform, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, ScrollView, Pressable, Share, ActivityIndicator, Modal, TextInput, Platform, KeyboardAvoidingView } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ban, Download, Link2Off, Share2, MessageCircle } from 'lucide-react-native';
 import { useInvoice, useShareInvoice, useRecordPayment, usePayments, useDuplicateInvoice, useSendReminder, useCancelInvoice, useDownloadInvoicePdf, useRevokeInvoiceLink } from '../../../lib/queries';
@@ -26,6 +26,7 @@ function RecordPaymentModal({
   visible: boolean;
   onClose: () => void;
 }) {
+  const insets = useSafeAreaInsets();
   const [amount, setAmount] = useState(String(balancePaise / 100));
   const [method, setMethod] = useState<(typeof PAYMENT_METHODS)[number]>('UPI');
   const [referenceId, setReferenceId] = useState('');
@@ -54,49 +55,118 @@ function RecordPaymentModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View className="flex-1 justify-end bg-black/50">
-        <View className="bg-neutral-50 dark:bg-card rounded-t-3xl p-6 pb-10">
-          <Text className="text-xl font-bold text-neutral-900 dark:text-white mb-4">Record Payment</Text>
+      <View className="flex-1 justify-end bg-black/60">
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View className="bg-neutral-50 dark:bg-card rounded-t-3xl p-6" style={{ paddingBottom: Math.max(insets.bottom + 16, 28) }}>
+            <View className="w-10 h-1 rounded-full bg-border self-center mb-4" />
+            <Text className="text-xl font-bold text-neutral-900 dark:text-white mb-4">Record Payment</Text>
 
-          <Text className="text-sm text-neutral-600 dark:text-neutral-400 mb-1.5">Amount (₹)</Text>
-          <TextInput
-            value={amount}
-            onChangeText={setAmount}
-            keyboardType="decimal-pad"
-            className="h-12 rounded-xl bg-white dark:bg-background border border-neutral-200 dark:border-border px-4 text-neutral-900 dark:text-white mb-4"
-          />
+            <Text className="text-sm text-neutral-600 dark:text-neutral-400 mb-1.5">Amount (₹)</Text>
+            <TextInput
+              value={amount}
+              onChangeText={setAmount}
+              keyboardType="decimal-pad"
+              cursorColor="#FF7A00"
+              selectionColor="#FF7A00"
+              style={{ textAlignVertical: 'center', includeFontPadding: false }}
+              className="h-12 rounded-xl bg-white dark:bg-background border border-neutral-200 dark:border-border px-4 text-neutral-900 dark:text-white mb-4"
+            />
 
-          <Text className="text-sm text-neutral-600 dark:text-neutral-400 mb-1.5">Method</Text>
-          <View className="flex-row gap-2 mb-6 flex-wrap">
-            {PAYMENT_METHODS.map((m) => (
-              <Pressable
-                key={m}
-                onPress={() => setMethod(m)}
-                className={`px-3 py-2 rounded-lg border ${
-                  method === m ? 'bg-primary border-primary' : 'bg-white dark:bg-background border-neutral-200 dark:border-border'
-                }`}
-              >
-                <Text className={method === m ? 'text-white' : 'text-neutral-600 dark:text-neutral-400'}>{m.replace('_', ' ')}</Text>
-              </Pressable>
-            ))}
+            <Text className="text-sm text-neutral-600 dark:text-neutral-400 mb-1.5">Method</Text>
+            <View className="flex-row gap-2 mb-6 flex-wrap">
+              {PAYMENT_METHODS.map((m) => (
+                <Pressable
+                  key={m}
+                  onPress={() => setMethod(m)}
+                  className={`px-3 py-2 rounded-lg border ${
+                    method === m ? 'bg-primary border-primary' : 'bg-white dark:bg-background border-neutral-200 dark:border-border'
+                  }`}
+                >
+                  <Text className={method === m ? 'text-white font-medium' : 'text-neutral-600 dark:text-neutral-400'}>{m.replace('_', ' ')}</Text>
+                </Pressable>
+              ))}
+            </View>
+
+            {method === 'UPI' ? (
+              <>
+                <Text className="text-sm text-neutral-600 dark:text-neutral-400 mb-1.5">UPI reference ID</Text>
+                <TextInput
+                  value={referenceId}
+                  onChangeText={setReferenceId}
+                  placeholder="From your UPI app history"
+                  placeholderTextColor="#6B6B6B"
+                  cursorColor="#FF7A00"
+                  selectionColor="#FF7A00"
+                  autoCapitalize="characters"
+                  style={{ textAlignVertical: 'center', includeFontPadding: false }}
+                  className="h-12 rounded-xl bg-white dark:bg-background border border-neutral-200 dark:border-border px-4 text-neutral-900 dark:text-white mb-4"
+                />
+                <Text className="text-neutral-500 text-xs -mt-2 mb-5">Required to reconcile a UPI payment and prevent duplicates.</Text>
+              </>
+            ) : null}
+
+            {error && <Text className="text-sm text-red-500 mb-4">{error}</Text>}
+
+            <Button label="Save Payment" onPress={onSubmit} loading={recordPayment.isPending} />
+            <Pressable onPress={onClose} className="mt-3 py-2.5 items-center rounded-xl border border-neutral-200 dark:border-border active:bg-neutral-100">
+              <Text className="text-neutral-600 dark:text-neutral-400 font-medium">Cancel</Text>
+            </Pressable>
           </View>
-
-          {method === 'UPI' ? (
-            <>
-              <Text className="text-sm text-neutral-600 dark:text-neutral-400 mb-1.5">UPI reference ID</Text>
-              <TextInput value={referenceId} onChangeText={setReferenceId} placeholder="From your UPI app history" placeholderTextColor="#6B6B6B" autoCapitalize="characters" className="h-12 rounded-xl bg-white dark:bg-background border border-neutral-200 dark:border-border px-4 text-neutral-900 dark:text-white mb-4" />
-              <Text className="text-neutral-500 text-xs -mt-2 mb-5">Required to reconcile a UPI payment and prevent duplicates.</Text>
-            </>
-          ) : null}
-
-          {error && <Text className="text-sm text-red-500 mb-4">{error}</Text>}
-
-          <Button label="Save Payment" onPress={onSubmit} loading={recordPayment.isPending} />
-          <Pressable onPress={onClose} className="mt-3 items-center">
-            <Text className="text-neutral-600 dark:text-neutral-400">Cancel</Text>
-          </Pressable>
-        </View>
+        </KeyboardAvoidingView>
       </View>
+    </Modal>
+  );
+}
+
+function ShareExpiryModal({
+  visible,
+  onClose,
+  onSelectExpiry,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onSelectExpiry: (days: number) => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const options = [
+    { days: 7, label: '7 days', desc: 'Best for immediate invoices or tight deadlines' },
+    { days: 30, label: '30 days', desc: 'Standard / recommended for most clients' },
+    { days: 90, label: '90 days', desc: 'For long-term retainers or ongoing projects' },
+  ];
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <Pressable onPress={onClose} className="flex-1 bg-black/60 justify-end">
+        <Pressable onPress={(e) => e.stopPropagation()} className="bg-neutral-50 dark:bg-card rounded-t-3xl p-6" style={{ paddingBottom: Math.max(insets.bottom + 16, 28) }}>
+          <View className="w-10 h-1 rounded-full bg-border self-center mb-4" />
+          <Text className="text-xl font-bold text-neutral-900 dark:text-white mb-1">Share payment link</Text>
+          <Text className="text-neutral-600 dark:text-neutral-400 text-sm mb-5">Choose how long this payment link should remain active.</Text>
+
+          {options.map((opt) => (
+            <Pressable
+              key={opt.days}
+              onPress={() => {
+                onClose();
+                onSelectExpiry(opt.days);
+              }}
+              className="bg-white dark:bg-background border border-neutral-200 dark:border-border rounded-2xl p-4 mb-3 active:bg-neutral-100 dark:active:bg-neutral-800"
+            >
+              <View className="flex-row items-center justify-between">
+                <Text className="text-neutral-900 dark:text-white font-semibold text-base">{opt.label}</Text>
+                <Text className="text-primary font-semibold text-xs">Select</Text>
+              </View>
+              <Text className="text-neutral-500 dark:text-neutral-400 text-xs mt-1">{opt.desc}</Text>
+            </Pressable>
+          ))}
+
+          <Pressable
+            onPress={onClose}
+            className="mt-2 py-3 items-center rounded-xl border border-neutral-200 dark:border-border active:bg-neutral-100"
+          >
+            <Text className="text-neutral-700 dark:text-neutral-300 font-medium">Cancel</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }
@@ -126,6 +196,7 @@ export default function InvoiceDetailScreen() {
     initialMessage: '',
     mode: 'share',
   });
+  const [shareExpiryModalOpen, setShareExpiryModalOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const contentStyle = useReadableContentWidth();
 
@@ -231,16 +302,7 @@ export default function InvoiceDetailScreen() {
   };
 
   const chooseShareExpiry = () => {
-    if (Platform.OS === 'web') {
-      void onShare(30);
-      return;
-    }
-    Alert.alert('Share invoice', 'Choose how long this payment link should remain active.', [
-      { text: '7 days', onPress: () => void onShare(7) },
-      { text: '30 days', onPress: () => void onShare(30) },
-      { text: '90 days', onPress: () => void onShare(90) },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    setShareExpiryModalOpen(true);
   };
 
   const onDuplicate = () => {
@@ -496,6 +558,12 @@ export default function InvoiceDetailScreen() {
         initialMessage={whatsAppModalConfig.initialMessage}
         mode={whatsAppModalConfig.mode}
         onToneChange={handleReminderToneChange}
+      />
+
+      <ShareExpiryModal
+        visible={shareExpiryModalOpen}
+        onClose={() => setShareExpiryModalOpen(false)}
+        onSelectExpiry={(days) => void onShare(days)}
       />
     </SafeAreaView>
   );
