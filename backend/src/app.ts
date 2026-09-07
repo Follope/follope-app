@@ -9,6 +9,7 @@ import { createPublicRouter } from './routes/public.routes.js';
 import { createMeRouter } from './routes/me.routes.js';
 import { createDashboardRouter } from './routes/dashboard.routes.js';
 import { createNotificationRouter } from './routes/notifications.routes.js';
+import { createAdminRouter, createAdminApiRouter } from './routes/admin.routes.js';
 
 /**
  * Builds the Express app. Takes `prisma` as a parameter (rather than
@@ -23,7 +24,12 @@ export function createApp(prisma: PrismaClient) {
   // API is deployed behind one known reverse-proxy hop.
   app.set('trust proxy', process.env.TRUST_PROXY === 'true' ? 1 : false);
 
-  app.use(helmet()); // sets baseline security headers (HSTS, X-Content-Type-Options, etc.) per spec section 11
+  app.use(
+    helmet({
+      contentSecurityPolicy: false, // Allows admin dashboard CDN scripts and public invoice QR renders
+      crossOriginEmbedderPolicy: false,
+    })
+  ); // sets baseline security headers (HSTS, X-Content-Type-Options, etc.) per spec section 11
   const allowedOriginsList = (process.env.ALLOWED_ORIGINS ?? '').split(',').filter(Boolean);
 
   app.use(
@@ -58,6 +64,8 @@ export function createApp(prisma: PrismaClient) {
   app.use('/v1/me', createMeRouter(prisma));
   app.use('/v1/dashboard', createDashboardRouter(prisma));
   app.use('/v1/notifications', createNotificationRouter(prisma));
+  app.use('/admin', createAdminRouter(prisma));
+  app.use('/v1/admin', createAdminApiRouter(prisma));
 
   // 404 fallback for anything unmatched
   app.use((_req, res) => {

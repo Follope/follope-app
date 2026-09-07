@@ -25,16 +25,25 @@ model User {
   pushToken     String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  role          UserRole @default(USER)
+  isBanned      Boolean  @default(false)
+  referralCode  String?  @unique
+  referredById  String?
 
-  profile       Profile?
-  business      Business?
-  clients       Client[]
-  invoices      Invoice[]
-  sessions      Session[]
-  auditLogs     AuditLog[]
-  notifications Notification[]
+  profile           Profile?
+  business          Business?
+  clients           Client[]
+  invoices          Invoice[]
+  sessions          Session[]
+  auditLogs         AuditLog[]
+  notifications     Notification[]
+  subscription      Subscription?
+  referralsGiven    Referral[]       @relation("Referrer")
+  referralReceived  Referral?        @relation("Referee")
+  couponRedemptions CouponRedemption[]
 
   @@index([email])
+  @@index([referralCode])
 }
 
 model Session {
@@ -287,4 +296,111 @@ model Otp {
   createdAt DateTime  @default(now())
 
   @@index([email, expiresAt])
+}
+
+// ---------------------------------------------------------------------------
+// ROLES & PLANS
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum PlanTier {
+  FREE
+  PRO_MONTHLY
+  PRO_ANNUAL
+  LIFETIME
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+// ---------------------------------------------------------------------------
+// PLAN & SYSTEM CONFIG (DYNAMIC ADMIN SETTINGS)
+// ---------------------------------------------------------------------------
+
+model PlanConfig {
+  id                   String   @id @default("default")
+  freeInvoiceLimit     Int      @default(3)      // Lifetime invoices for Free tier
+  freeMaxInvoiceEdits  Int      @default(1)      // Max edits allowed per invoice on Free tier
+  referralRewardMonths Int      @default(1)      // Free Pro months per referral
+  proMonthlyPricePaise Int      @default(49900)  // ₹499/mo
+  proAnnualPricePaise  Int      @default(399900) // ₹3999/yr
+  noticeBanner         String?
+  minAppVersion        String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// SUBSCRIPTIONS
+// ---------------------------------------------------------------------------
+
+model Subscription {
+  id                 String             @id @default(cuid())
+  userId             String             @unique
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tier               PlanTier           @default(FREE)
+  status             SubscriptionStatus @default(ACTIVE)
+  customInvoiceLimit Int?               // Optional override for extra free invoices
+  startedAt          DateTime           @default(now())
+  expiresAt          DateTime?          // null for FREE or LIFETIME
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([userId, status])
+}
+
+// ---------------------------------------------------------------------------
+// COUPONS
+// ---------------------------------------------------------------------------
+
+model Coupon {
+  id            String             @id @default(cuid())
+  code          String             @unique
+  discountType  String             @default("FREE_PRO_MONTHS") // "FREE_PRO_MONTHS" | "PERCENTAGE"
+  discountValue Int                @default(1)                 // e.g. 1 (month) or 100 (%)
+  maxUses       Int?
+  usedCount     Int                @default(0)
+  expiresAt     DateTime?
+  isActive      Boolean            @default(true)
+  createdAt     DateTime           @default(now())
+  redemptions   CouponRedemption[]
+
+  @@index([code, isActive])
+}
+
+model CouponRedemption {
+  id         String   @id @default(cuid())
+  couponId   String
+  coupon     Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  redeemedAt DateTime @default(now())
+
+  @@unique([couponId, userId])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// REFERRALS
+// ---------------------------------------------------------------------------
+
+model Referral {
+  id            String   @id @default(cuid())
+  referrerId    String
+  referrer      User     @relation("Referrer", fields: [referrerId], references: [id], onDelete: Cascade)
+  refereeId     String   @unique
+  referee       User     @relation("Referee", fields: [refereeId], references: [id], onDelete: Cascade)
+  codeUsed      String
+  rewardGranted Boolean  @default(false)
+  rewardedAt    DateTime?
+  createdAt     DateTime @default(now())
+
+  @@index([referrerId])
 }

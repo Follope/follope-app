@@ -10,6 +10,7 @@ import { FormInput } from '../../../../components/FormInput';
 import { createInvoiceSchema, type CreateInvoiceInput, formatRupees, rupeesToPaise } from '../../../../lib/schemas';
 import { useInvoice, useUpdateInvoice } from '../../../../lib/queries';
 import { ApiError } from '../../../../lib/api';
+import { showAlert } from '../../../../lib/alert';
 
 type EditInput = CreateInvoiceInput & { reason?: string };
 
@@ -68,7 +69,11 @@ export default function EditInvoiceScreen() {
     try {
       await updateInvoice.mutateAsync(values);
       router.back();
-    } catch (err) {
+    } catch (err: any) {
+      if (err instanceof ApiError && err.code === 'REVISION_LIMIT_REACHED') {
+        showAlert('Revision Limit Reached', 'Free tier allows 1 edit per invoice. Upgrade to Pro or redeem a promo code in Settings for unlimited edits.');
+        return;
+      }
       // The button below exposes the precise backend state error on a retry.
       throw err instanceof ApiError ? err : new Error('Could not save this revision.');
     }

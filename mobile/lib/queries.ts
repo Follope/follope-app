@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, api, newIdempotencyKey } from './api';
 import { downloadAndShareAccountingReport, downloadAndShareInvoicePdf } from './invoicePdf';
-import type { Client, Invoice, DashboardData, Payment, Business, CashFlowAnalytics, NotificationResponse } from './types';
+import type { Client, Invoice, DashboardData, Payment, Business, CashFlowAnalytics, NotificationResponse, SubscriptionDetails, ReferralStats, CouponRedeemResult } from './types';
 import type { ClientInput, CreateInvoiceInput, RecordPaymentInput, BusinessInput } from './schemas';
 
 // --- Clients ---------------------------------------------------------------
@@ -284,5 +284,34 @@ export function useSendTestNotification() {
       api.post<{ sent: boolean; message: string }>('/notifications/test-push'),
   });
 }
+
+// --- Subscription, Referral & Coupons ---------------------------------------
+
+export function useSubscription() {
+  return useQuery({
+    queryKey: ['subscription'],
+    queryFn: () => api.get<SubscriptionDetails>('/me/subscription'),
+  });
+}
+
+export function useReferral() {
+  return useQuery({
+    queryKey: ['referral'],
+    queryFn: () => api.get<ReferralStats>('/me/referral'),
+  });
+}
+
+export function useRedeemCoupon() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (code: string) =>
+      api.post<CouponRedeemResult>('/me/redeem-coupon', { code }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['subscription'] });
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+    },
+  });
+}
+
 
 

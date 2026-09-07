@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import { buildUpiPaymentUri } from './upiService.js';
 import { NotFoundError } from './clientService.js';
 import { createPushService } from './pushService.js';
+import { getUserSubscription } from './subscriptionService.js';
 
 /**
  * Fields exposed on the public invoice page. This is an explicit allow-list,
@@ -41,6 +42,7 @@ export interface PublicInvoiceView {
   };
   clientDisplayName: string;
   notes: string | null;
+  showFollopeBranding?: boolean;
   upi: {
     payUri: string;
     qrCodeDataUrl: string;
@@ -127,6 +129,9 @@ export function createPublicInvoiceService(prisma: PrismaClient) {
         }
       }
 
+      const subDetails = await getUserSubscription(prisma, invoice.userId).catch(() => null);
+      const showFollopeBranding = !subDetails?.isPro;
+
       return {
         invoiceNumber: invoice.invoiceNumber,
         status: invoice.status,
@@ -154,6 +159,7 @@ export function createPublicInvoiceService(prisma: PrismaClient) {
         },
         clientDisplayName: invoice.client.name,
         notes: invoice.notes,
+        showFollopeBranding,
         upi,
       };
     },

@@ -23,6 +23,28 @@ function mockPrisma(opts: {
       update: vi.fn(({ where, data }: any) =>
         Promise.resolve({ ...invoices[where.id], ...data, items: [], payments: [], client: {} })
       ),
+      count: vi.fn(() => Promise.resolve(0)),
+    },
+    subscription: {
+      findUnique: vi.fn(() => Promise.resolve(null)),
+      create: vi.fn(({ data }: any) => Promise.resolve({ id: 'sub_1', ...data })),
+      update: vi.fn(({ data }: any) => Promise.resolve({ id: 'sub_1', ...data })),
+    },
+    planConfig: {
+      findUnique: vi.fn(() =>
+        Promise.resolve({
+          id: 'default',
+          freeInvoiceLimit: 3,
+          maxInvoiceEdits: 1,
+          referralRewardMonths: 1,
+          proMonthlyPricePaise: 29900,
+          proAnnualPricePaise: 249900,
+          lifetimePricePaise: 499900,
+        })
+      ),
+    },
+    referral: {
+      findUnique: vi.fn(() => Promise.resolve(null)),
     },
     auditLog: {
       create: vi.fn(() => Promise.resolve({})),

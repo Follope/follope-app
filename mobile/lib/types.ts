@@ -129,3 +129,56 @@ export interface NotificationResponse {
   };
 }
 
+export type PlanTier = 'FREE' | 'PRO_MONTHLY' | 'PRO_ANNUAL' | 'LIFETIME';
+
+export interface UserSubscription {
+  id: string;
+  userId: string;
+  tier: PlanTier;
+  status: 'ACTIVE' | 'EXPIRED' | 'CANCELLED';
+  customInvoiceLimit?: number | null;
+  expiresAt?: string | null;
+}
+
+export interface SubscriptionDetails {
+  subscription: UserSubscription;
+  isPro: boolean;
+  tier: PlanTier;
+  lifetimeInvoiceCount: number;
+  freeInvoiceLimit: number;
+  remainingInvoices: number;
+  maxInvoiceEdits: number;
+  expiresAt: string | null;
+}
+
+export interface ReferralItem {
+  id: string;
+  codeUsed: string;
+  rewardGranted: boolean;
+  createdAt: string;
+  referee: {
+    name: string;
+    createdAt: string;
+  };
+}
+
+export interface ReferralStats {
+  referralCode: string;
+  referralLink: string;
+  totalReferred: number;
+  rewardedCount: number;
+  rewardMonthsEarned: number;
+  rewardMonthsPerReferral: number;
+  referrals: ReferralItem[];
+}
+
+export interface CouponRedeemResult {
+  coupon: {
+    code: string;
+    discountType: string;
+    discountValue: number;
+  };
+  message: string;
+}
+
+

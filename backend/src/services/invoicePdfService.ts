@@ -200,12 +200,23 @@ export function renderInvoicePdf(invoice: PublicInvoiceView): Promise<Buffer> {
     }
 
     // 7. Footer
-    const footerY = 790;
+    const footerY = 788;
     doc.moveTo(startX, footerY).lineTo(endX, footerY).strokeColor('#E5E7EB').lineWidth(0.5).stroke();
-    doc.fontSize(8).font('Helvetica').fillColor('#9CA3AF').text('Thank you for your business! · Generated via Follope (follope.com)', startX, footerY + 8, {
-      align: 'center',
-      width: contentWidth,
-    });
+    if (invoice.showFollopeBranding !== false) {
+      doc.fontSize(8).font('Helvetica-Bold').fillColor('#FF7A00').text('Created with Follope', startX, footerY + 6, {
+        align: 'center',
+        width: contentWidth,
+      });
+      doc.fontSize(7).font('Helvetica').fillColor('#9CA3AF').text('Free invoicing & automated payment reminders · follope.com', startX, footerY + 16, {
+        align: 'center',
+        width: contentWidth,
+      });
+    } else {
+      doc.fontSize(8).font('Helvetica').fillColor('#9CA3AF').text('Thank you for your business! · Generated via Follope', startX, footerY + 10, {
+        align: 'center',
+        width: contentWidth,
+      });
+    }
 
     doc.end();
   });

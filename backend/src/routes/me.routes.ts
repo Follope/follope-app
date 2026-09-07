@@ -2,6 +2,10 @@ import { Router } from 'express';
 import type { PrismaClient } from '@prisma/client';
 import { createBusinessService, createProfileService } from '../services/businessService.js';
 import { createAuthService, AuthError } from '../services/authService.js';
+import { getUserSubscription } from '../services/subscriptionService.js';
+import { getReferralStats } from '../services/referralService.js';
+import { redeemCoupon } from '../services/couponService.js';
+import { ApiError } from '../utils/errors.js';
 import { businessSchema, profileSchema } from '../lib/settingsValidation.js';
 import { changePasswordSchema } from '../lib/validation.js';
 import { requireAuth, type AuthedRequest } from '../middleware/requireAuth.js';
@@ -95,6 +99,50 @@ export function createMeRouter(prisma: PrismaClient) {
       return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Session not found' } });
     }
     return res.json({ data: { success: true } });
+  });
+
+  router.get('/subscription', async (req: AuthedRequest, res) => {
+    try {
+      const sub = await getUserSubscription(prisma, req.userId!);
+      return res.json({ data: sub });
+    } catch (err) {
+      console.error('[Subscription] Failed to get user subscription:', err);
+      return res.status(500).json({ error: { code: 'INTERNAL', message: 'Failed to fetch subscription' } });
+    }
+  });
+
+  router.get('/referral', async (req: AuthedRequest, res) => {
+    try {
+      const stats = await getReferralStats(prisma, req.userId!);
+      return res.json({ data: stats });
+    } catch (err) {
+      console.error('[Referral] Failed to get referral stats:', err);
+      return res.status(500).json({ error: { code: 'INTERNAL', message: 'Failed to fetch referral stats' } });
+    }
+  });
+
+  router.post('/redeem-coupon', async (req: AuthedRequest, res) => {
+    const { code } = req.body ?? {};
+    if (!code || typeof code !== 'string') {
+      return res.status(400).json({
+        error: { code: 'VALIDATION_ERROR', message: 'Coupon code is required.' },
+      });
+    }
+
+    try {
+      const result = await redeemCoupon(prisma, req.userId!, code);
+      return res.json({ data: result });
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        return res.status(err.statusCode).json({
+          error: { code: err.code, message: err.message },
+        });
+      }
+      console.error('[Coupon] Redemption error:', err);
+      return res.status(500).json({
+        error: { code: 'INTERNAL', message: 'Failed to redeem coupon.' },
+      });
+    }
   });
 
   return router;

@@ -3,6 +3,8 @@ import { randomUUID } from 'crypto';
 import { computeInvoiceTotals, type InvoiceItemInput } from './invoiceCalculator.js';
 import { nextInvoiceNumber } from './invoiceNumbering.js';
 import { NotFoundError } from './clientService.js';
+import { canCreateInvoice, canEditInvoice } from './subscriptionService.js';
+import { checkAndRewardReferralOnFirstInvoice } from './referralService.js';
 
 export interface CreateInvoiceItemInput extends InvoiceItemInput {
   description: string;
@@ -28,6 +30,12 @@ export class InvoiceStateError extends Error {
 export function createInvoiceService(prisma: PrismaClient) {
   return {
     async create(userId: string, input: CreateInvoiceInput) {
+      // Subscription quota check (e.g. max 3 invoices on Free plan)
+      const quota = await canCreateInvoice(prisma, userId);
+      if (!quota.allowed) {
+        throw new InvoiceStateError(quota.reason ?? 'Invoice limit reached', 'INVOICE_LIMIT_REACHED');
+      }
+
       // Ownership check: the client being invoiced must belong to this user.
       const client = await prisma.client.findUnique({ where: { id: input.clientId } });
       if (!client || client.userId !== userId) {
@@ -86,6 +94,9 @@ export function createInvoiceService(prisma: PrismaClient) {
         data: { userId, action: 'invoice_created', entityType: 'Invoice', entityId: invoice.id },
       });
 
+      // Reward referral if this is the user's first invoice (anti-fraud)
+      void checkAndRewardReferralOnFirstInvoice(prisma, userId);
+
       return invoice;
     },
 
@@ -101,6 +112,12 @@ export function createInvoiceService(prisma: PrismaClient) {
     },
 
     async update(userId: string, invoiceId: string, input: UpdateInvoiceInput) {
+      // Check if user is allowed to edit this invoice (e.g. max 1 edit on Free tier)
+      const editQuota = await canEditInvoice(prisma, userId, invoiceId);
+      if (!editQuota.allowed) {
+        throw new InvoiceStateError(editQuota.reason ?? 'Revision limit reached', 'REVISION_LIMIT_REACHED');
+      }
+
       const client = await prisma.client.findUnique({ where: { id: input.clientId } });
       if (!client || client.userId !== userId) throw new NotFoundError('Client not found');
       const totals = computeInvoiceTotals(input.items);

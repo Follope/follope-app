@@ -12,6 +12,7 @@ import {
   safeEqual,
 } from '../lib/auth.js';
 import { createEmailService, type EmailService } from './emailService.js';
+import { generateReferralCode, attachReferralOnSignup } from './referralService.js';
 
 export class AuthError extends Error {
   constructor(message: string, public code: string = 'AUTH_ERROR') {
@@ -21,7 +22,7 @@ export class AuthError extends Error {
 
 export function createAuthService(prisma: PrismaClient, emailService: EmailService = createEmailService()) {
   return {
-    async register(input: { name: string; email: string; password: string }, ctx: { userAgent?: string; ip?: string }) {
+    async register(input: { name: string; email: string; password: string; referralCode?: string }, ctx: { userAgent?: string; ip?: string }) {
       const email = input.email.trim().toLowerCase();
 
       const existing = await prisma.user.findUnique({ where: { email } });
@@ -31,9 +32,26 @@ export function createAuthService(prisma: PrismaClient, emailService: EmailServi
       }
 
       const passwordHash = await hashPassword(input.password);
+      const myReferralCode = generateReferralCode();
+
       const user = await prisma.user.create({
-        data: { name: input.name.trim(), email, passwordHash },
+        data: {
+          name: input.name.trim(),
+          email,
+          passwordHash,
+          referralCode: myReferralCode,
+          subscription: {
+            create: {
+              tier: 'FREE',
+              status: 'ACTIVE',
+            },
+          },
+        },
       });
+
+      if (input.referralCode) {
+        await attachReferralOnSignup(prisma, user.id, input.referralCode);
+      }
 
       return issueSession(prisma, user.id, ctx);
     },
@@ -49,6 +67,10 @@ export function createAuthService(prisma: PrismaClient, emailService: EmailServi
 
       if (!user || !user.passwordHash || !valid) {
         throw new AuthError('Invalid email or password', 'INVALID_CREDENTIALS');
+      }
+
+      if (user.isBanned) {
+        throw new AuthError('Your account has been suspended. Please contact support@follope.com.', 'ACCOUNT_BANNED');
       }
 
       await prisma.auditLog.create({

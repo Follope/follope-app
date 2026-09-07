@@ -8,7 +8,7 @@ import { Plus, Trash2, ChevronDown } from 'lucide-react-native';
 import { Button } from '../../../components/Button';
 import { FormInput } from '../../../components/FormInput';
 import { createInvoiceSchema, type CreateInvoiceInput, rupeesToPaise, formatRupees } from '../../../lib/schemas';
-import { useBusiness, useClients, useCreateInvoice } from '../../../lib/queries';
+import { useBusiness, useClients, useCreateInvoice, useSubscription } from '../../../lib/queries';
 import { ApiError } from '../../../lib/api';
 import type { Client } from '../../../lib/types';
 import { useReadableContentWidth } from '../../../lib/layout';
@@ -47,6 +47,8 @@ export default function CreateInvoiceScreen() {
   const [formError, setFormError] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [invoiceToCreate, setInvoiceToCreate] = useState<CreateInvoiceInput | null>(null);
+  const { data: subDetails } = useSubscription();
+  const [limitModalOpen, setLimitModalOpen] = useState(false);
 
   const { control, handleSubmit, setValue, formState } = useForm<CreateInvoiceInput>({
     resolver: zodResolver(createInvoiceSchema),
@@ -85,7 +87,12 @@ export default function CreateInvoiceScreen() {
     try {
       const invoice = await createInvoice.mutateAsync(values);
       router.replace(`/(main)/invoices/${invoice.id}`);
-    } catch (err) {
+    } catch (err: any) {
+      if (err instanceof ApiError && err.code === 'INVOICE_LIMIT_REACHED') {
+        setPreviewOpen(false);
+        setLimitModalOpen(true);
+        return;
+      }
       setFormError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
     }
   };
@@ -100,6 +107,17 @@ export default function CreateInvoiceScreen() {
     <SafeAreaView className="flex-1 bg-white dark:bg-background">
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1">
         <ScrollView contentContainerClassName="px-6 pt-4 pb-8" contentContainerStyle={contentStyle} keyboardShouldPersistTaps="handled">
+          {subDetails && !subDetails.isPro && (
+            <View className="mb-4 px-3.5 py-2.5 rounded-xl bg-orange-500/10 border border-orange-500/20 flex-row items-center justify-between">
+              <Text className="text-xs text-orange-400 font-medium">
+                Free Tier: {subDetails.lifetimeInvoiceCount} of {subDetails.freeInvoiceLimit} invoices used
+              </Text>
+              <Pressable onPress={() => router.push('/(main)/settings')}>
+                <Text className="text-xs font-bold text-orange-500 underline">Get Pro</Text>
+              </Pressable>
+            </View>
+          )}
+
           <Text className="text-2xl font-bold text-neutral-900 dark:text-white mb-6">Create Invoice</Text>
 
           {/* Client picker */}
@@ -343,6 +361,36 @@ export default function CreateInvoiceScreen() {
               className="items-center mt-3 py-2.5 rounded-xl border border-neutral-200 dark:border-border active:bg-neutral-100"
             >
               <Text className="text-neutral-700 dark:text-neutral-300 font-medium">Edit invoice</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* QUOTA LIMIT REACHED MODAL */}
+      <Modal visible={limitModalOpen} transparent animationType="fade" onRequestClose={() => setLimitModalOpen(false)}>
+        <View className="flex-1 bg-black/70 items-center justify-center p-6">
+          <View className="w-full max-w-sm bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl p-6 shadow-2xl items-center">
+            <View className="w-12 h-12 rounded-2xl bg-orange-500/10 items-center justify-center mb-3">
+              <Text className="text-2xl">🔒</Text>
+            </View>
+            <Text className="text-lg font-bold text-neutral-900 dark:text-white text-center">Free Plan Limit Reached</Text>
+            <Text className="text-xs text-neutral-500 text-center mt-2 mb-6 leading-relaxed">
+              You have created all 3 free invoices under your lifetime quota. Upgrade to Pro, redeem a partner promo code, or invite a friend to get free Pro months!
+            </Text>
+
+            <Button
+              label="Go to Settings (Redeem / Refer)"
+              onPress={() => {
+                setLimitModalOpen(false);
+                router.push('/(main)/settings');
+              }}
+            />
+
+            <Pressable
+              onPress={() => setLimitModalOpen(false)}
+              className="mt-3 py-2"
+            >
+              <Text className="text-xs font-semibold text-neutral-500">Close</Text>
             </Pressable>
           </View>
         </View>
