@@ -3,11 +3,10 @@
  * ⚡ Follope Gmail OAuth2 Refresh Token Generator
  * 
  * Run this script to generate your GMAIL_REFRESH_TOKEN for the Gmail HTTP REST API:
- * node scripts/get-gmail-refresh-token.cjs
+ * node backend/scripts/get-gmail-refresh-token.cjs
  */
 
 const http = require('http');
-const url = require('url');
 const readline = require('readline');
 const fs = require('fs');
 const path = require('path');
@@ -24,36 +23,35 @@ async function main() {
   console.log('   📧 Follope Gmail HTTP OAuth2 Setup Wizard           ');
   console.log('======================================================\n');
   console.log('This wizard will generate your GMAIL_REFRESH_TOKEN so');
-  console.log('Follope can send emails via Gmail HTTP (Port 443) on Render.\n');
+  console.log('Follope can send emails via Gmail HTTP (Port 443) on Sevalla/Render.\n');
 
-  let clientId = process.env.GMAIL_CLIENT_ID || '';
-  let clientSecret = process.env.GMAIL_CLIENT_SECRET || '';
+  let clientId = '';
+  let clientSecret = '';
 
   // Check if a client_secret json exists in Downloads or backend
   const downloadsDir = path.join(process.env.USERPROFILE || process.env.HOME || '', 'Downloads');
   try {
     const files = fs.readdirSync(downloadsDir);
     const jsonFile = files.find((f) => f.startsWith('client_secret_') && f.endsWith('.json'));
-    if (jsonFile && (!clientId || !clientSecret)) {
+    if (jsonFile) {
       const data = JSON.parse(fs.readFileSync(path.join(downloadsDir, jsonFile), 'utf8'));
       const webOrInstalled = data.web || data.installed;
       if (webOrInstalled) {
-        clientId = webOrInstalled.client_id;
-        clientSecret = webOrInstalled.client_secret;
-        console.log(`💡 Found Google credentials from: ${jsonFile}\n`);
+        const foundId = webOrInstalled.client_id;
+        const foundSecret = webOrInstalled.client_secret;
+        console.log(`💡 Found Google credentials from: ${jsonFile}`);
+        const useFound = await question(`Use this Client ID (${foundId.slice(0, 25)}...)? (Y/n): `);
+        if (useFound.trim().toLowerCase() !== 'n') {
+          clientId = foundId;
+          clientSecret = foundSecret;
+        }
       }
     }
   } catch {}
 
   if (!clientId) {
     clientId = await question('Enter your Google OAuth Client ID: ');
-  } else {
-    const useFound = await question(`Use Client ID (${clientId.slice(0, 20)}...)? (Y/n): `);
-    if (useFound.trim().toLowerCase() === 'n') {
-      clientId = await question('Enter your Google OAuth Client ID: ');
-    }
   }
-
   if (!clientSecret) {
     clientSecret = await question('Enter your Google OAuth Client Secret: ');
   }
@@ -82,9 +80,9 @@ async function main() {
   console.log('Waiting for authorization callback on http://localhost:8088/oauth2callback ...\n');
 
   const server = http.createServer(async (req, res) => {
-    const reqUrl = url.parse(req.url, true);
+    const reqUrl = new URL(req.url, 'http://localhost:8088');
     if (reqUrl.pathname === '/oauth2callback') {
-      const code = reqUrl.query.code;
+      const code = reqUrl.searchParams.get('code');
       if (!code) {
         res.writeHead(400, { 'Content-Type': 'text/html' });
         res.end('<h1>Authorization failed: No code received</h1>');
@@ -98,8 +96,6 @@ async function main() {
           <p>You can close this tab and return to your terminal.</p>
         </div>
       `);
-
-      server.close();
 
       try {
         console.log('⏳ Exchanging code for refresh token with Google...');
@@ -119,9 +115,9 @@ async function main() {
         if (!tokens.refresh_token) {
           console.error('\n❌ Google did not return a refresh_token.');
           console.log('Response:', tokens);
-          console.log('\nTip: Make sure you selected prompt=consent or revoked previous access at:');
-          console.log('https://myaccount.google.com/permissions');
-          process.exit(1);
+          console.log('\nTip: Make sure you entered the correct matching Client Secret.');
+          setTimeout(() => process.exit(1), 500);
+          return;
         }
 
         console.log('\n======================================================');
@@ -131,12 +127,12 @@ async function main() {
         console.log(`GMAIL_CLIENT_SECRET=${clientSecret}`);
         console.log(`GMAIL_REFRESH_TOKEN=${tokens.refresh_token}`);
         console.log('GMAIL_USER=follope.official@gmail.com');
-        console.log('\n👉 Copy and paste these into your Render Environment Variables!');
+        console.log('\n👉 Copy and paste these into your Sevalla Environment Variables!');
         console.log('======================================================\n');
-        process.exit(0);
+        setTimeout(() => process.exit(0), 500);
       } catch (err) {
         console.error('Error exchanging token:', err);
-        process.exit(1);
+        setTimeout(() => process.exit(1), 500);
       }
     }
   });
