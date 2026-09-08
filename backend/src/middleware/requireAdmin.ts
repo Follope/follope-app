@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import type { PrismaClient } from '@prisma/client';
-import { verifyAccessToken } from '../lib/auth.js';
+import { verifyAccessToken, safeEqual, getAdminSecret } from '../lib/auth.js';
 
 export interface AdminRequest extends Request {
   userId?: string;
@@ -9,11 +9,11 @@ export interface AdminRequest extends Request {
 
 export function createRequireAdmin(prisma: PrismaClient) {
   return async function requireAdmin(req: AdminRequest, res: Response, next: NextFunction) {
-    const adminSecret = process.env.ADMIN_SECRET || 'follope_superadmin_2026';
+    const adminSecret = getAdminSecret();
 
     // 1. Check custom header x-admin-key or query param (for direct browser downloads like CSV exports)
     const adminKey = req.headers['x-admin-key'] || req.query.adminKey;
-    if (adminKey && typeof adminKey === 'string' && adminKey === adminSecret) {
+    if (adminSecret && typeof adminKey === 'string' && safeEqual(adminKey, adminSecret)) {
       req.isAdmin = true;
       return next();
     }
@@ -24,7 +24,7 @@ export function createRequireAdmin(prisma: PrismaClient) {
       const token = header.slice('Bearer '.length);
 
       // Direct admin key passed as Bearer token
-      if (token === adminSecret) {
+      if (adminSecret && safeEqual(token, adminSecret)) {
         req.isAdmin = true;
         return next();
       }

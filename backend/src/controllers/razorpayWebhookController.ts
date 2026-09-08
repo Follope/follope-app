@@ -5,13 +5,26 @@ import { fulfillPayment, verifyWebhookSignature } from '../services/razorpayServ
 export function createRazorpayWebhookController(prisma: PrismaClient) {
   return async function handleRazorpayWebhook(req: Request, res: Response) {
     try {
-      const signature = req.headers['x-razorpay-signature'] as string;
-      const rawBody = (req as any).rawBody || JSON.stringify(req.body);
+      const signature = req.headers['x-razorpay-signature'] as string | undefined;
+      const rawBody = (req as any).rawBody || (typeof req.body === 'string' ? req.body : JSON.stringify(req.body));
+      const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET?.trim();
+      const isProduction = process.env.NODE_ENV === 'production';
 
-      if (process.env.RAZORPAY_WEBHOOK_SECRET) {
-        const isValid = verifyWebhookSignature(rawBody, signature);
+      // Security Check: In production, webhook secret MUST be set; fail-closed if missing
+      if (!webhookSecret) {
+        if (isProduction) {
+          console.error('CRITICAL: RAZORPAY_WEBHOOK_SECRET is not configured in production.');
+          return res.status(500).json({ error: 'Webhook signature verification is not configured on server' });
+        }
+      } else {
+        // When secret is configured, header is mandatory and must match HMAC
+        if (!signature) {
+          return res.status(400).json({ error: 'Missing x-razorpay-signature header' });
+        }
+
+        const isValid = verifyWebhookSignature(rawBody, signature, webhookSecret);
         if (!isValid) {
-          console.warn('Invalid Razorpay webhook signature');
+          console.warn('Invalid Razorpay webhook signature rejected.');
           return res.status(400).json({ error: 'Invalid webhook signature' });
         }
       }

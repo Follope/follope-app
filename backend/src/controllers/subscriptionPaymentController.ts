@@ -4,6 +4,7 @@ import {
   createPaymentOrder,
   fulfillPayment,
   verifyPaymentSignature,
+  isRazorpayConfigured,
 } from '../services/razorpayService.js';
 
 export function createSubscriptionPaymentController(prisma: PrismaClient) {
@@ -51,18 +52,60 @@ export function createSubscriptionPaymentController(prisma: PrismaClient) {
           });
         }
 
-        if (razorpaySignature && razorpayOrderId) {
+        // Multi-tenant IDOR protection: Verify payment order exists and belongs to authenticated user
+        const order = await prisma.paymentOrder.findUnique({
+          where: { id: orderId },
+        });
+
+        if (!order) {
+          return res.status(404).json({
+            error: { code: 'ORDER_NOT_FOUND', message: 'Payment order not found' },
+          });
+        }
+
+        if (order.userId !== userId) {
+          return res.status(403).json({
+            error: { code: 'FORBIDDEN', message: 'You are not authorized to verify this payment order' },
+          });
+        }
+
+        // Mandatory signature verification whenever Razorpay is configured or running in production
+        const enforceSignature = isRazorpayConfigured() || process.env.NODE_ENV === 'production';
+        if (enforceSignature) {
+          if (!razorpaySignature || !razorpayOrderId) {
+            return res.status(400).json({
+              error: {
+                code: 'SIGNATURE_REQUIRED',
+                message: 'razorpayOrderId and razorpaySignature are required for payment verification',
+              },
+            });
+          }
+
           const isValid = verifyPaymentSignature(razorpayOrderId, razorpayPaymentId, razorpaySignature);
           if (!isValid) {
             return res.status(400).json({
               error: { code: 'INVALID_SIGNATURE', message: 'Payment verification failed' },
             });
           }
+        } else {
+          // In development sandbox mode without Razorpay API keys:
+          if (razorpaySignature && razorpayOrderId) {
+            const isValid = verifyPaymentSignature(razorpayOrderId, razorpayPaymentId, razorpaySignature);
+            if (!isValid) {
+              return res.status(400).json({
+                error: { code: 'INVALID_SIGNATURE', message: 'Payment verification failed' },
+              });
+            }
+          } else if (!razorpayPaymentId.startsWith('mock_')) {
+            return res.status(400).json({
+              error: { code: 'SIGNATURE_REQUIRED', message: 'Signature verification required' },
+            });
+          }
         }
 
         const result = await fulfillPayment(prisma, {
-          paymentOrderId: orderId,
-          razorpayOrderId,
+          paymentOrderId: order.id,
+          razorpayOrderId: razorpayOrderId || order.razorpayOrderId || undefined,
           razorpayPaymentId,
           razorpaySignature,
         });
@@ -79,16 +122,39 @@ export function createSubscriptionPaymentController(prisma: PrismaClient) {
     async paymentCallback(req: Request, res: Response) {
       const orderDbId = req.query.orderDbId as string;
       const mock = req.query.mock === 'true';
-      const rzpPaymentId = (req.query.razorpay_payment_id as string) || (mock ? `mock_pay_${Date.now()}` : null);
-      const rzpSignature = req.query.razorpay_signature as string;
+      const rzpPaymentId = req.query.razorpay_payment_id as string | undefined;
+      const rzpOrderId = (req.query.razorpay_order_id as string) || (req.query.razorpay_payment_link_id as string);
+      const rzpSignature = req.query.razorpay_signature as string | undefined;
 
+      const isProduction = process.env.NODE_ENV === 'production';
+
+      // Security check: Never allow mock payments in production
+      if (mock && isProduction) {
+        return res.status(403).send('Mock payments are strictly disabled in production.');
+      }
+
+      // In production, require cryptographic verification before any callback fulfillment
       if (orderDbId && rzpPaymentId) {
         try {
-          await fulfillPayment(prisma, {
-            paymentOrderId: orderDbId,
-            razorpayPaymentId: rzpPaymentId,
-            razorpaySignature: rzpSignature,
-          });
+          if (rzpSignature && rzpOrderId) {
+            const isValid = verifyPaymentSignature(rzpOrderId, rzpPaymentId, rzpSignature);
+            if (isValid) {
+              await fulfillPayment(prisma, {
+                paymentOrderId: orderDbId,
+                razorpayOrderId: rzpOrderId,
+                razorpayPaymentId: rzpPaymentId,
+                razorpaySignature: rzpSignature,
+              });
+            } else {
+              console.warn('Tampered signature on paymentCallback for order:', orderDbId);
+            }
+          } else if (mock && !isProduction) {
+            // Local dev / test sandbox mock fulfillment
+            await fulfillPayment(prisma, {
+              paymentOrderId: orderDbId,
+              razorpayPaymentId: `mock_pay_${Date.now()}`,
+            });
+          }
         } catch (err) {
           console.error('Auto-fulfillment on callback error:', err);
         }

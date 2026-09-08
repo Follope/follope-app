@@ -5,15 +5,22 @@ import { getPlanConfig, updatePlanConfig, type UpdatePlanConfigInput } from '../
 import { grantUserPlan } from '../services/subscriptionService.js';
 import { createCoupon, listCoupons, toggleCouponStatus } from '../services/couponService.js';
 import { listPaymentOrders } from '../services/razorpayService.js';
+import { safeEqual, getAdminSecret } from '../lib/auth.js';
 import { ApiError } from '../utils/errors.js';
 
 export function createAdminController(prisma: PrismaClient) {
   return {
     async login(req: AdminRequest, res: Response) {
       const { secret } = req.body ?? {};
-      const masterSecret = process.env.ADMIN_SECRET || 'follope_superadmin_2026';
+      const masterSecret = getAdminSecret();
 
-      if (!secret || secret !== masterSecret) {
+      if (!masterSecret) {
+        return res.status(500).json({
+          error: { code: 'CONFIGURATION_ERROR', message: 'Admin master secret is not configured securely in production.' },
+        });
+      }
+
+      if (!secret || !safeEqual(secret, masterSecret)) {
         return res.status(401).json({
           error: { code: 'INVALID_CREDENTIALS', message: 'Invalid admin master secret key.' },
         });

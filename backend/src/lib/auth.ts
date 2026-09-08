@@ -68,11 +68,28 @@ export function hashPasswordResetToken(token: string): string {
 }
 
 /** Constant-time comparison for anything derived from a secret token. */
-export function safeEqual(a: string, b: string): boolean {
+export function safeEqual(a?: string | null, b?: string | null): boolean {
+  if (!a || !b) return false;
   const bufA = Buffer.from(a);
   const bufB = Buffer.from(b);
   if (bufA.length !== bufB.length) return false;
   return timingSafeEqual(bufA, bufB);
+}
+
+/**
+ * Returns the configured ADMIN_SECRET.
+ * In production, strictly forbids the default insecure fallback.
+ */
+export function getAdminSecret(): string | null {
+  const secret = process.env.ADMIN_SECRET?.trim();
+  const isProduction = process.env.NODE_ENV === 'production';
+  if (isProduction) {
+    if (!secret || secret === 'follope_superadmin_2026') {
+      return null;
+    }
+    return secret;
+  }
+  return secret || 'follope_superadmin_2026';
 }
 
 /**

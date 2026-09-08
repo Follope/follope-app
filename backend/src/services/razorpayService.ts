@@ -163,6 +163,10 @@ export async function createPaymentOrder(
     }
   }
 
+  if (process.env.NODE_ENV === 'production' && (!keyId || !keySecret)) {
+    throw new Error('Razorpay credentials (RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET) must be configured in production');
+  }
+
   // Fallback / Mock Mode: returns a direct callback link for testing without live credentials
   const mockPaymentUrl = `${apiBase}/v1/subscriptions/payment-callback?orderDbId=${paymentOrder.id}&mock=true`;
   await prisma.paymentOrder.update({
@@ -185,7 +189,18 @@ export async function createPaymentOrder(
 }
 
 /**
- * Validates Razorpay Payment Signature using HMAC-SHA256.
+ * Compares two strings in constant time to prevent timing attacks.
+ */
+export function timingSafeCompare(a?: string | null, b?: string | null): boolean {
+  if (!a || !b) return false;
+  const bufA = Buffer.from(a, 'utf8');
+  const bufB = Buffer.from(b, 'utf8');
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+/**
+ * Validates Razorpay Payment Signature using HMAC-SHA256 in constant time.
  */
 export function verifyPaymentSignature(
   orderId: string,
@@ -193,18 +208,18 @@ export function verifyPaymentSignature(
   signature: string
 ): boolean {
   const secret = getRazorpayKeySecret();
-  if (!secret) return false;
+  if (!secret || !orderId || !paymentId || !signature) return false;
 
   const expectedSignature = crypto
     .createHmac('sha256', secret)
     .update(`${orderId}|${paymentId}`)
     .digest('hex');
 
-  return expectedSignature === signature;
+  return timingSafeCompare(expectedSignature, signature);
 }
 
 /**
- * Validates Razorpay Webhook Signature using HMAC-SHA256 against raw request body.
+ * Validates Razorpay Webhook Signature using HMAC-SHA256 against raw request body in constant time.
  */
 export function verifyWebhookSignature(
   rawBody: string,
@@ -219,7 +234,7 @@ export function verifyWebhookSignature(
     .update(rawBody)
     .digest('hex');
 
-  return expectedSignature === signature;
+  return timingSafeCompare(expectedSignature, signature);
 }
 
 /**
