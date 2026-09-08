@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, api, newIdempotencyKey } from './api';
 import { downloadAndShareAccountingReport, downloadAndShareInvoicePdf } from './invoicePdf';
-import type { Client, Invoice, DashboardData, Payment, Business, CashFlowAnalytics, NotificationResponse, SubscriptionDetails, ReferralStats, CouponRedeemResult } from './types';
+import type { Client, Invoice, DashboardData, Payment, Business, CashFlowAnalytics, NotificationResponse, SubscriptionDetails, ReferralStats, CouponRedeemResult, CheckoutSessionResult } from './types';
 import type { ClientInput, CreateInvoiceInput, RecordPaymentInput, BusinessInput } from './schemas';
 
 // --- Clients ---------------------------------------------------------------
@@ -309,6 +309,30 @@ export function useRedeemCoupon() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['subscription'] });
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
+    },
+  });
+}
+
+export function useCreateCheckoutSession() {
+  return useMutation({
+    mutationFn: (input: { planTier: 'PRO_MONTHLY' | 'PRO_ANNUAL' | 'LIFETIME'; callbackUrl?: string }) =>
+      api.post<CheckoutSessionResult>('/subscriptions/create-checkout', input),
+  });
+}
+
+export function useVerifyPayment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      orderId: string;
+      razorpayOrderId?: string;
+      razorpayPaymentId: string;
+      razorpaySignature?: string;
+    }) => api.post<{ success: boolean; message: string }>('/subscriptions/verify-payment', input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['subscription'] });
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     },
   });
 }

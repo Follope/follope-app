@@ -38,6 +38,7 @@ model User {
   auditLogs         AuditLog[]
   notifications     Notification[]
   subscription      Subscription?
+  paymentOrders     PaymentOrder[]
   referralsGiven    Referral[]       @relation("Referrer")
   referralReceived  Referral?        @relation("Referee")
   couponRedemptions CouponRedemption[]
@@ -320,6 +321,12 @@ enum SubscriptionStatus {
   CANCELLED
 }
 
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
 // ---------------------------------------------------------------------------
 // PLAN & SYSTEM CONFIG (DYNAMIC ADMIN SETTINGS)
 // ---------------------------------------------------------------------------
@@ -329,12 +336,37 @@ model PlanConfig {
   freeInvoiceLimit     Int      @default(3)      // Lifetime invoices for Free tier
   freeMaxInvoiceEdits  Int      @default(1)      // Max edits allowed per invoice on Free tier
   referralRewardMonths Int      @default(1)      // Free Pro months per referral
-  proMonthlyPricePaise Int      @default(49900)  // ₹499/mo
-  proAnnualPricePaise  Int      @default(399900) // ₹3999/yr
+  proMonthlyPricePaise Int      @default(29900)  // ₹299/mo
+  proAnnualPricePaise  Int      @default(249900) // ₹2499/yr
+  lifetimePricePaise   Int      @default(499900) // ₹4999 one-time
   noticeBanner         String?
   minAppVersion        String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// PAYMENT ORDERS & TRANSACTIONS (RAZORPAY)
+// ---------------------------------------------------------------------------
+
+model PaymentOrder {
+  id                  String        @id @default(cuid())
+  userId              String
+  user                User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planTier            PlanTier
+  amountPaise         Int
+  currency            String        @default("INR")
+  razorpayOrderId     String?       @unique
+  razorpayPaymentId   String?
+  razorpaySignature   String?
+  razorpayPaymentLink String?
+  status              PaymentStatus @default(PENDING)
+  notes               Json?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  @@index([userId, status])
+  @@index([razorpayOrderId])
 }
 
 // ---------------------------------------------------------------------------

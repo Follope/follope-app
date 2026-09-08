@@ -156,6 +156,16 @@ export interface SubscriptionDetails {
   };
 }
 
+export interface CheckoutSessionResult {
+  orderId: string;
+  razorpayOrderId: string | null;
+  paymentUrl: string;
+  amountPaise: number;
+  currency: string;
+  keyId: string | null;
+  planTier: PlanTier;
+}
+
 export interface ReferralItem {
   id: string;
   codeUsed: string;

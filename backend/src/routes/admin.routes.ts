@@ -45,6 +45,7 @@ export function createAdminApiRouter(prisma: PrismaClient) {
   router.delete('/coupons/:id', adminController.deleteCoupon);
 
   router.get('/referrals', adminController.listReferrals);
+  router.get('/payments', adminController.listPayments);
 
   router.get('/export/users.csv', adminController.exportUsersCsv);
   router.get('/export/invoices.csv', adminController.exportInvoicesCsv);

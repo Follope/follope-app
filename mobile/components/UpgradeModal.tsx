@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { View, Text, Modal, Pressable, ScrollView, Linking } from 'react-native';
-import { Crown, Sparkles, X, Check, Zap, ShieldCheck } from 'lucide-react-native';
+import { View, Text, Modal, Pressable, ScrollView, Linking, ActivityIndicator } from 'react-native';
+import { Crown, Sparkles, X, Check, Zap, ShieldCheck, CreditCard, MessageCircle } from 'lucide-react-native';
 import { useAuthStore } from '../lib/authStore';
+import { useCreateCheckoutSession } from '../lib/queries';
+import { showAlert } from '../lib/alert';
 import type { SubscriptionDetails } from '../lib/types';
 
 interface UpgradeModalProps {
@@ -14,12 +16,27 @@ interface UpgradeModalProps {
 export function UpgradeModal({ visible, onClose, onOpenRedeem, subscription }: UpgradeModalProps) {
   const user = useAuthStore((s) => s.user);
   const [selectedPlan, setSelectedPlan] = useState<'MONTHLY' | 'ANNUAL' | 'LIFETIME'>('ANNUAL');
+  const createCheckout = useCreateCheckoutSession();
 
   const monthlyPrice = Math.round((subscription?.pricing?.proMonthlyPaise ?? 29900) / 100);
   const annualPrice = Math.round((subscription?.pricing?.proAnnualPaise ?? 249900) / 100);
   const lifetimePrice = Math.round((subscription?.pricing?.lifetimePaise ?? 499900) / 100);
 
-  const handleSubscribe = () => {
+  const handleSubscribe = async () => {
+    const planTier = selectedPlan === 'ANNUAL' ? 'PRO_ANNUAL' : selectedPlan === 'LIFETIME' ? 'LIFETIME' : 'PRO_MONTHLY';
+    try {
+      const res = await createCheckout.mutateAsync({ planTier });
+      if (res?.paymentUrl) {
+        onClose();
+        Linking.openURL(res.paymentUrl);
+      }
+    } catch (err: any) {
+      console.error('Checkout error:', err);
+      showAlert('Checkout Error', 'Could not open payment gateway. You can also pay directly via WhatsApp / UPI.');
+    }
+  };
+
+  const handleWhatsAppFallback = () => {
     const planLabel = selectedPlan === 'ANNUAL'
       ? `Pro Annual (₹${annualPrice}/year)`
       : selectedPlan === 'LIFETIME'
@@ -170,17 +187,24 @@ export function UpgradeModal({ visible, onClose, onOpenRedeem, subscription }: U
             {/* CTA BUTTON */}
             <Pressable
               onPress={handleSubscribe}
-              className="w-full py-3.5 rounded-2xl bg-orange-500 active:bg-orange-600 flex-row items-center justify-center space-x-2 shadow-lg shadow-orange-500/25"
+              disabled={createCheckout.isPending}
+              className="w-full py-4 rounded-2xl bg-orange-500 active:bg-orange-600 disabled:opacity-50 flex-row items-center justify-center space-x-2 shadow-lg shadow-orange-500/25"
             >
-              <Zap color="#FFFFFF" size={18} />
-              <Text className="text-white text-sm font-bold ml-2">
-                Upgrade to {selectedPlan === 'LIFETIME' ? 'Lifetime' : selectedPlan === 'ANNUAL' ? 'Annual Pro' : 'Monthly Pro'}
-              </Text>
+              {createCheckout.isPending ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <>
+                  <CreditCard color="#FFFFFF" size={18} />
+                  <Text className="text-white text-base font-bold ml-2">
+                    Pay ₹{selectedPlan === 'LIFETIME' ? lifetimePrice : selectedPlan === 'ANNUAL' ? annualPrice : monthlyPrice} (UPI / Cards)
+                  </Text>
+                </>
+              )}
             </Pressable>
 
-            {/* REDEEM / REFER ALTERNATIVES */}
-            <View className="flex-row items-center justify-center space-x-4 mt-4">
-              {onOpenRedeem && (
+            {/* FALLBACK OPTIONS */}
+            <View className="flex-row items-center justify-between mt-4 px-1">
+              {onOpenRedeem ? (
                 <Pressable
                   onPress={() => {
                     onClose();
@@ -188,11 +212,18 @@ export function UpgradeModal({ visible, onClose, onOpenRedeem, subscription }: U
                   }}
                   className="py-1"
                 >
-                  <Text className="text-xs font-semibold text-orange-400 underline">
-                    Have a promo code? Redeem here
+                  <Text className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 underline">
+                    Have a promo code?
                   </Text>
                 </Pressable>
-              )}
+              ) : <View />}
+
+              <Pressable onPress={handleWhatsAppFallback} className="py-1 flex-row items-center">
+                <MessageCircle color="#10B981" size={14} />
+                <Text className="text-xs font-semibold text-emerald-500 ml-1">
+                  Pay via WhatsApp / UPI
+                </Text>
+              </Pressable>
             </View>
           </ScrollView>
         </View>

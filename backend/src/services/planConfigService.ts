@@ -6,6 +6,7 @@ export interface UpdatePlanConfigInput {
   referralRewardMonths?: number;
   proMonthlyPricePaise?: number;
   proAnnualPricePaise?: number;
+  lifetimePricePaise?: number;
   noticeBanner?: string | null;
   minAppVersion?: string | null;
 }
@@ -30,8 +31,9 @@ export async function getPlanConfig(prisma: PrismaClient): Promise<PlanConfig> {
       freeInvoiceLimit: 3,
       freeMaxInvoiceEdits: 1,
       referralRewardMonths: 1,
-      proMonthlyPricePaise: 49900,
-      proAnnualPricePaise: 399900,
+      proMonthlyPricePaise: 29900,
+      proAnnualPricePaise: 249900,
+      lifetimePricePaise: 499900,
       noticeBanner: null,
       minAppVersion: null,
       createdAt: new Date(),
@@ -50,8 +52,9 @@ export async function getPlanConfig(prisma: PrismaClient): Promise<PlanConfig> {
         freeInvoiceLimit: 3,
         freeMaxInvoiceEdits: 1,
         referralRewardMonths: 1,
-        proMonthlyPricePaise: 49900,
-        proAnnualPricePaise: 399900,
+        proMonthlyPricePaise: 29900,
+        proAnnualPricePaise: 249900,
+        lifetimePricePaise: 499900,
       },
     });
   }
@@ -77,6 +80,7 @@ export async function updatePlanConfig(
       ...(input.referralRewardMonths !== undefined ? { referralRewardMonths: input.referralRewardMonths } : {}),
       ...(input.proMonthlyPricePaise !== undefined ? { proMonthlyPricePaise: input.proMonthlyPricePaise } : {}),
       ...(input.proAnnualPricePaise !== undefined ? { proAnnualPricePaise: input.proAnnualPricePaise } : {}),
+      ...(input.lifetimePricePaise !== undefined ? { lifetimePricePaise: input.lifetimePricePaise } : {}),
       ...(input.noticeBanner !== undefined ? { noticeBanner: input.noticeBanner } : {}),
       ...(input.minAppVersion !== undefined ? { minAppVersion: input.minAppVersion } : {}),
     },
@@ -85,8 +89,9 @@ export async function updatePlanConfig(
       freeInvoiceLimit: input.freeInvoiceLimit ?? 3,
       freeMaxInvoiceEdits: input.freeMaxInvoiceEdits ?? 1,
       referralRewardMonths: input.referralRewardMonths ?? 1,
-      proMonthlyPricePaise: input.proMonthlyPricePaise ?? 49900,
-      proAnnualPricePaise: input.proAnnualPricePaise ?? 399900,
+      proMonthlyPricePaise: input.proMonthlyPricePaise ?? 29900,
+      proAnnualPricePaise: input.proAnnualPricePaise ?? 249900,
+      lifetimePricePaise: input.lifetimePricePaise ?? 499900,
       noticeBanner: input.noticeBanner ?? null,
       minAppVersion: input.minAppVersion ?? null,
     },

@@ -4,6 +4,7 @@ import type { AdminRequest } from '../middleware/requireAdmin.js';
 import { getPlanConfig, updatePlanConfig, type UpdatePlanConfigInput } from '../services/planConfigService.js';
 import { grantUserPlan } from '../services/subscriptionService.js';
 import { createCoupon, listCoupons, toggleCouponStatus } from '../services/couponService.js';
+import { listPaymentOrders } from '../services/razorpayService.js';
 import { ApiError } from '../utils/errors.js';
 
 export function createAdminController(prisma: PrismaClient) {
@@ -39,6 +40,7 @@ export function createAdminController(prisma: PrismaClient) {
         totalCoupons,
         totalReferrals,
         rewardedReferrals,
+        paymentAggregate,
         recentUsers,
         recentInvoices,
       ] = await Promise.all([
@@ -60,6 +62,11 @@ export function createAdminController(prisma: PrismaClient) {
         prisma.coupon.count(),
         prisma.referral.count(),
         prisma.referral.count({ where: { rewardGranted: true } }),
+        prisma.paymentOrder.aggregate({
+          where: { status: 'SUCCESS' },
+          _sum: { amountPaise: true },
+          _count: { id: true },
+        }),
         prisma.user.findMany({
           take: 10,
           orderBy: { createdAt: 'desc' },
@@ -136,10 +143,19 @@ export function createAdminController(prisma: PrismaClient) {
             total: totalReferrals,
             rewarded: rewardedReferrals,
           },
+          revenue: {
+            totalPaise: paymentAggregate._sum.amountPaise ?? 0,
+            totalOrders: paymentAggregate._count.id ?? 0,
+          },
           recentUsers,
           recentInvoices,
         },
       });
+    },
+
+    async listPayments(_req: AdminRequest, res: Response) {
+      const data = await listPaymentOrders(prisma, 100);
+      return res.json({ data });
     },
 
     async getConfig(_req: AdminRequest, res: Response) {

@@ -10,6 +10,7 @@ import { createMeRouter } from './routes/me.routes.js';
 import { createDashboardRouter } from './routes/dashboard.routes.js';
 import { createNotificationRouter } from './routes/notifications.routes.js';
 import { createAdminRouter, createAdminApiRouter } from './routes/admin.routes.js';
+import { createSubscriptionPaymentRouter, createWebhookRouter } from './routes/subscriptionPayment.routes.js';
 
 /**
  * Builds the Express app. Takes `prisma` as a parameter (rather than
@@ -52,7 +53,14 @@ export function createApp(prisma: PrismaClient) {
       credentials: true,
     })
   );
-  app.use(express.json({ limit: '1mb' }));
+  app.use(
+    express.json({
+      limit: '1mb',
+      verify: (req: any, _res, buf) => {
+        req.rawBody = buf.toString();
+      },
+    })
+  );
 
   app.get('/health', (_req, res) => res.json({ data: { status: 'ok' } }));
 
@@ -64,6 +72,8 @@ export function createApp(prisma: PrismaClient) {
   app.use('/v1/me', createMeRouter(prisma));
   app.use('/v1/dashboard', createDashboardRouter(prisma));
   app.use('/v1/notifications', createNotificationRouter(prisma));
+  app.use('/v1/subscriptions', createSubscriptionPaymentRouter(prisma));
+  app.use('/v1/webhooks', createWebhookRouter(prisma));
   app.use('/admin', createAdminRouter(prisma));
   app.use('/v1/admin', createAdminApiRouter(prisma));
 

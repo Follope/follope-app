@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { View, Text, ScrollView, Pressable, TextInput, Modal, Linking, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Crown, Sparkles, Check, Zap, Gift, Share2, Copy, ShieldCheck } from 'lucide-react-native';
+import { Crown, Sparkles, Check, Zap, Gift, Share2, Copy, ShieldCheck, CreditCard, MessageCircle } from 'lucide-react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useAuthStore } from '../../../lib/authStore';
-import { useSubscription, useReferral, useRedeemCoupon } from '../../../lib/queries';
+import { useSubscription, useReferral, useRedeemCoupon, useCreateCheckoutSession } from '../../../lib/queries';
 import { showAlert } from '../../../lib/alert';
 import { ApiError } from '../../../lib/api';
 
@@ -13,6 +13,7 @@ export default function SubscriptionScreen() {
   const { data: subDetails, refetch: refetchSub } = useSubscription();
   const { data: referral } = useReferral();
   const redeemCoupon = useRedeemCoupon();
+  const createCheckout = useCreateCheckoutSession();
 
   const [selectedPlan, setSelectedPlan] = useState<'MONTHLY' | 'ANNUAL' | 'LIFETIME'>('ANNUAL');
   const [redeemModalOpen, setRedeemModalOpen] = useState(false);
@@ -36,7 +37,20 @@ export default function SubscriptionScreen() {
   const annualPrice = Math.round((subDetails?.pricing?.proAnnualPaise ?? 249900) / 100);
   const lifetimePrice = Math.round((subDetails?.pricing?.lifetimePaise ?? 499900) / 100);
 
-  const handleSubscribe = () => {
+  const handleSubscribe = async () => {
+    const planTier = selectedPlan === 'ANNUAL' ? 'PRO_ANNUAL' : selectedPlan === 'LIFETIME' ? 'LIFETIME' : 'PRO_MONTHLY';
+    try {
+      const res = await createCheckout.mutateAsync({ planTier });
+      if (res?.paymentUrl) {
+        Linking.openURL(res.paymentUrl);
+      }
+    } catch (err: any) {
+      console.error('Checkout error:', err);
+      showAlert('Checkout Error', 'Could not open payment gateway. You can also pay directly via WhatsApp / UPI.');
+    }
+  };
+
+  const handleWhatsAppFallback = () => {
     const planLabel = selectedPlan === 'ANNUAL'
       ? `Pro Annual (₹${annualPrice}/year)`
       : selectedPlan === 'LIFETIME'
@@ -234,7 +248,7 @@ export default function SubscriptionScreen() {
             <Text className="text-xs text-neutral-500 dark:text-neutral-400">Flexible month-to-month billing</Text>
           </View>
           <View className="items-end">
-            <Text className="text-lg font-extrabold text-neutral-900 dark:text-white font-mono">₹${monthlyPrice}</Text>
+            <Text className="text-lg font-extrabold text-neutral-900 dark:text-white font-mono">₹{monthlyPrice}</Text>
             <Text className="text-[10px] text-neutral-400">/month</Text>
           </View>
         </Pressable>
@@ -258,7 +272,7 @@ export default function SubscriptionScreen() {
             <Text className="text-xs text-neutral-500 dark:text-neutral-400">Pay once, enjoy Follope Pro forever</Text>
           </View>
           <View className="items-end">
-            <Text className="text-lg font-extrabold text-neutral-900 dark:text-white font-mono">₹${lifetimePrice}</Text>
+            <Text className="text-lg font-extrabold text-neutral-900 dark:text-white font-mono">₹{lifetimePrice}</Text>
             <Text className="text-[10px] text-neutral-400">forever</Text>
           </View>
         </Pressable>
@@ -266,14 +280,28 @@ export default function SubscriptionScreen() {
         {/* UPGRADE CTA BUTTON */}
         <Pressable
           onPress={handleSubscribe}
-          className="w-full py-4 rounded-2xl bg-orange-500 active:bg-orange-600 flex-row items-center justify-center space-x-2 shadow-lg shadow-orange-500/25 mb-8"
+          disabled={createCheckout.isPending}
+          className="w-full py-4 rounded-2xl bg-orange-500 active:bg-orange-600 disabled:opacity-50 flex-row items-center justify-center space-x-2 shadow-lg shadow-orange-500/25 mb-3"
         >
-          <Zap color="#FFFFFF" size={18} />
-          <Text className="text-white text-base font-bold ml-2">
-            {isPro
-              ? 'Extend / Renew Subscription'
-              : `Upgrade to ${selectedPlan === 'LIFETIME' ? 'Lifetime' : selectedPlan === 'ANNUAL' ? 'Annual Pro' : 'Monthly Pro'}`}
-          </Text>
+          {createCheckout.isPending ? (
+            <ActivityIndicator color="#FFFFFF" size="small" />
+          ) : (
+            <>
+              <CreditCard color="#FFFFFF" size={18} />
+              <Text className="text-white text-base font-bold ml-2">
+                {isPro ? 'Extend / Renew' : 'Proceed to Pay'} · ₹{selectedPlan === 'LIFETIME' ? lifetimePrice : selectedPlan === 'ANNUAL' ? annualPrice : monthlyPrice} (UPI / Cards)
+              </Text>
+            </>
+          )}
+        </Pressable>
+
+        {/* WHATSAPP / DIRECT UPI FALLBACK */}
+        <Pressable
+          onPress={handleWhatsAppFallback}
+          className="w-full py-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 flex-row items-center justify-center mb-8"
+        >
+          <MessageCircle color="#10B981" size={16} />
+          <Text className="text-emerald-500 text-xs font-bold ml-2">Or Pay via WhatsApp / Direct UPI</Text>
         </Pressable>
 
         {/* REFER & EARN SECTION */}
