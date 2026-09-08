@@ -145,5 +145,20 @@ export function createMeRouter(prisma: PrismaClient) {
     }
   });
 
+  // DELETE /v1/me/account — Google Play mandatory user account & data deletion
+  router.delete('/account', async (req: AuthedRequest, res) => {
+    try {
+      await prisma.user.delete({
+        where: { id: req.userId! },
+      });
+      return res.json({
+        data: { success: true, message: 'Account and all associated invoice data have been permanently deleted.' },
+      });
+    } catch (err) {
+      console.error('[me.routes] Failed to delete account:', err);
+      return res.status(500).json({ error: { code: 'INTERNAL', message: 'Failed to delete account' } });
+    }
+  });
+
   return router;
 }

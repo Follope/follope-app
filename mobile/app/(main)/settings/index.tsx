@@ -92,6 +92,26 @@ export default function SettingsScreen() {
     confirmAction('Log out', 'Are you sure you want to log out?', performLogout, 'Log out');
   };
 
+  const performDeleteAccount = async () => {
+    try {
+      await api.delete('/me/account');
+      await clearSession();
+      showAlert('Account Deleted', 'Your account and all associated data have been permanently removed.');
+      router.replace('/(auth)/welcome');
+    } catch (err: any) {
+      showAlert('Error', err instanceof ApiError ? err.message : 'Failed to delete account. Please try again.');
+    }
+  };
+
+  const onDeleteAccount = () => {
+    confirmAction(
+      'Delete Account',
+      'Are you sure you want to permanently delete your account? All your invoices, client details, and payment histories will be permanently removed. This action cannot be undone.',
+      performDeleteAccount,
+      'Delete Permanently'
+    );
+  };
+
   const handleCopyReferral = async () => {
     if (!referral?.referralCode) return;
     await Clipboard.setStringAsync(referral.referralCode);
@@ -309,9 +329,10 @@ export default function SettingsScreen() {
           />
         </SettingsSection>
 
-        <SettingsSection title="Security">
+        <SettingsSection title="Security & Account">
           <SettingsRow label="Change password" onPress={() => router.push('/(main)/settings/change-password')} />
           <SettingsRow label="Active sessions" onPress={() => router.push('/(main)/settings/sessions')} />
+          <SettingsRow label="Delete account" onPress={onDeleteAccount} />
         </SettingsSection>
 
         <Pressable
