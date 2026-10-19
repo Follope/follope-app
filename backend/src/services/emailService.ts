@@ -33,6 +33,7 @@ export interface EmailService {
 
 export function createEmailService(): EmailService {
   const fromAddress = process.env.EMAIL_FROM ?? 'Follope <support@follope.com>';
+  const isProduction = process.env.NODE_ENV === 'production';
 
   // 1. Check for Nodemailer SMTP configuration (e.g. Hostinger Web Hosting SMTP, Gmail, SendGrid, etc.)
   const smtpHost = process.env.SMTP_HOST;
@@ -197,7 +198,9 @@ export function createEmailService(): EmailService {
         } catch (err) {
           transporter = null;
           console.error('[EmailService] Nodemailer SMTP send error:', err);
-          // Always log email dispatch fallback so OTP is visible in server logs
+          if (isProduction) return false;
+          // Development-only preview. Authentication codes and reset links
+          // must never be written to production logs.
           console.log('\n================== EMAIL DISPATCH (LOG FALLBACK) ==================');
           console.log(`To: ${options.to}`);
           console.log(`From: ${fromAddress}`);
@@ -209,7 +212,12 @@ export function createEmailService(): EmailService {
         }
       }
 
-      // Option C: Local/Staging Development Fallback
+      if (isProduction) {
+        console.error('[EmailService] No working production email provider is configured.');
+        return false;
+      }
+
+      // Local development preview only.
       console.log('================ EMAIL DISPATCH (DEV PREVIEW) ================');
       console.log(`To: ${options.to}`);
       console.log(`From: ${fromAddress}`);

@@ -16,6 +16,7 @@ export function createSubscriptionPaymentRouter(prisma: PrismaClient) {
   // Authenticated endpoints for mobile app
   router.post('/create-checkout', requireAuth, checkoutRateLimit, controller.createCheckout);
   router.post('/verify-payment', requireAuth, verifyRateLimit, controller.verifyPayment);
+  router.post('/sync-iap', requireAuth, verifyRateLimit, controller.syncIap);
 
   // Public callback URL redirected from payment gateway
   router.get('/payment-callback', callbackRateLimit, controller.paymentCallback);

@@ -116,6 +116,7 @@ describe('Payment & Admin Security Hardening Tests', () => {
               planTier: 'PRO_MONTHLY',
               amountPaise: 29900,
               status: 'PENDING',
+              razorpayOrderId: 'rzp_order_legit',
             })
           ),
         },
@@ -126,6 +127,7 @@ describe('Payment & Admin Security Hardening Tests', () => {
         userId: 'user_123',
         body: {
           orderId: 'order_legit',
+          razorpayOrderId: 'rzp_order_legit',
           razorpayPaymentId: 'pay_bypass_attempt',
           // razorpaySignature omitted!
         },
@@ -152,11 +154,12 @@ describe('Payment & Admin Security Hardening Tests', () => {
   });
 
   describe('Payment Callback Security', () => {
-    it('strictly forbids mock=true in production', async () => {
+    it('never fulfills a payment from callback URL parameters', async () => {
       process.env.NODE_ENV = 'production';
 
       const mockPrisma = {
         paymentOrder: {
+          findUnique: vi.fn(() => Promise.resolve({ status: 'PENDING' })),
           update: vi.fn(),
         },
       } as any;
@@ -169,23 +172,15 @@ describe('Payment & Admin Security Hardening Tests', () => {
         },
       } as any;
 
-      let statusCode = 200;
       let sentBody = '';
       const res = {
-        status: (code: number) => {
-          statusCode = code;
-          return {
-            send: (data: any) => {
-              sentBody = data;
-            },
-          };
-        },
+        setHeader: vi.fn(),
+        send: (data: any) => { sentBody = data; },
       } as any;
 
       await controller.paymentCallback(req, res);
 
-      expect(statusCode).toBe(403);
-      expect(sentBody).toContain('strictly disabled in production');
+      expect(sentBody).toContain('Payment is processing');
       expect(mockPrisma.paymentOrder.update).not.toHaveBeenCalled();
     });
   });

@@ -1,5 +1,6 @@
 import Constants from 'expo-constants';
 import * as FileSystem from 'expo-file-system/legacy';
+import { Platform } from 'react-native';
 import { useAuthStore, getStoredRefreshToken, setStoredRefreshToken } from './authStore';
 
 function getApiBaseUrl(): string {
@@ -63,12 +64,15 @@ async function performRefresh(): Promise<string | null> {
     const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken: currentRefreshToken }),
+      credentials: Platform.OS === 'web' ? 'include' : undefined,
+      body: Platform.OS === 'web' ? JSON.stringify({}) : JSON.stringify({ refreshToken: currentRefreshToken }),
     });
     if (!res.ok) return null;
 
     const { data } = await res.json();
-    await setStoredRefreshToken(data.refreshToken);
+    if (Platform.OS === 'web' || data.refreshToken) {
+      await setStoredRefreshToken(data.refreshToken ?? '__cookie_session__');
+    }
     useAuthStore.getState().setAccessToken(data.accessToken);
     return data.accessToken as string;
   } catch {
@@ -99,6 +103,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     res = await fetch(`${API_BASE_URL}${path}`, {
       method,
       headers,
+      credentials: Platform.OS === 'web' ? 'include' : undefined,
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch {

@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import type { PrismaClient } from '@prisma/client';
-import { verifyAccessToken, safeEqual, getAdminSecret } from '../lib/auth.js';
+import { verifyAccessToken, verifyAdminToken } from '../lib/auth.js';
 
 export interface AdminRequest extends Request {
   userId?: string;
@@ -9,24 +9,19 @@ export interface AdminRequest extends Request {
 
 export function createRequireAdmin(prisma: PrismaClient) {
   return async function requireAdmin(req: AdminRequest, res: Response, next: NextFunction) {
-    const adminSecret = getAdminSecret();
-
-    // 1. Check custom header x-admin-key or query param (for direct browser downloads like CSV exports)
-    const adminKey = req.headers['x-admin-key'] || req.query.adminKey;
-    if (adminSecret && typeof adminKey === 'string' && safeEqual(adminKey, adminSecret)) {
-      req.isAdmin = true;
-      return next();
-    }
-
-    // 2. Check Authorization Bearer token
+    // Admin APIs accept only short-lived admin sessions or an authenticated
+    // ADMIN user. The long-lived master secret is never accepted as an API
+    // credential and is never allowed in query strings.
     const header = req.headers.authorization;
     if (header?.startsWith('Bearer ')) {
       const token = header.slice('Bearer '.length);
 
-      // Direct admin key passed as Bearer token
-      if (adminSecret && safeEqual(token, adminSecret)) {
+      try {
+        verifyAdminToken(token);
         req.isAdmin = true;
         return next();
+      } catch {
+        // It may instead be a normal user access token for an ADMIN account.
       }
 
       try {

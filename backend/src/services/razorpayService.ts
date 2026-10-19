@@ -91,9 +91,13 @@ export async function createPaymentOrder(
 
   const keyId = getRazorpayKeyId();
   const keySecret = getRazorpayKeySecret();
+  if (process.env.NODE_ENV === 'production' && (!keyId || !keySecret)) {
+    throw new Error('Razorpay credentials (RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET) must be configured in production');
+  }
   const apiBase = process.env.PUBLIC_API_URL || 'https://api.follope.com';
   const defaultCallback = `${apiBase}/v1/subscriptions/payment-callback?orderDbId=${paymentOrder.id}`;
-  const callbackUrl = input.callbackUrl || defaultCallback;
+  // Never let a client choose the gateway redirect target.
+  const callbackUrl = defaultCallback;
 
   // If Razorpay API credentials are configured, call Razorpay Payment Links API
   if (keyId && keySecret) {
@@ -160,11 +164,8 @@ export async function createPaymentOrder(
       };
     } catch (err: any) {
       console.error('Razorpay payment link creation failed:', err);
+      if (process.env.NODE_ENV === 'production') throw err;
     }
-  }
-
-  if (process.env.NODE_ENV === 'production' && (!keyId || !keySecret)) {
-    throw new Error('Razorpay credentials (RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET) must be configured in production');
   }
 
   // Fallback / Mock Mode: returns a direct callback link for testing without live credentials
@@ -253,62 +254,39 @@ export async function fulfillPayment(
     razorpaySignature?: string;
   }
 ): Promise<{ success: boolean; order: PaymentOrder; message: string }> {
-  let order: PaymentOrder | null = null;
+  return prisma.$transaction(async (tx) => {
+    const order = input.paymentOrderId
+      ? await tx.paymentOrder.findUnique({ where: { id: input.paymentOrderId } })
+      : input.razorpayOrderId
+        ? await tx.paymentOrder.findFirst({ where: { razorpayOrderId: input.razorpayOrderId } })
+        : null;
 
-  if (input.paymentOrderId) {
-    order = await prisma.paymentOrder.findUnique({
-      where: { id: input.paymentOrderId },
-    });
-  } else if (input.razorpayOrderId) {
-    order = await prisma.paymentOrder.findFirst({
-      where: {
-        OR: [
-          { razorpayOrderId: input.razorpayOrderId },
-          { id: input.razorpayOrderId },
-        ],
+    if (!order) throw new Error('Payment order record not found');
+    if (order.status === 'SUCCESS') {
+      return { success: true, order, message: 'Payment order was already processed and active.' };
+    }
+    if (!input.paymentOrderId && input.razorpayOrderId && order.razorpayOrderId !== input.razorpayOrderId) {
+      throw new Error('Gateway order does not match payment order');
+    }
+
+    // Conditional claim prevents simultaneous webhook/API deliveries from
+    // extending the subscription more than once.
+    const claimed = await tx.paymentOrder.updateMany({
+      where: { id: order.id, status: { not: 'SUCCESS' } },
+      data: {
+        status: 'SUCCESS',
+        razorpayPaymentId: input.razorpayPaymentId,
+        razorpaySignature: input.razorpaySignature || order.razorpaySignature,
       },
     });
-  }
+    if (claimed.count !== 1) {
+      const current = await tx.paymentOrder.findUniqueOrThrow({ where: { id: order.id } });
+      return { success: true, order: current, message: 'Payment order was already processed and active.' };
+    }
 
-  if (!order) {
-    throw new Error('Payment order record not found');
-  }
-
-  // Idempotency: If already fulfilled, return early
-  if (order.status === 'SUCCESS') {
-    return {
-      success: true,
-      order,
-      message: 'Payment order was already processed and active.',
-    };
-  }
-
-  // Update payment order to SUCCESS
-  const updatedOrder = await prisma.paymentOrder.update({
-    where: { id: order.id },
-    data: {
-      status: 'SUCCESS',
-      razorpayPaymentId: input.razorpayPaymentId,
-      razorpaySignature: input.razorpaySignature || order.razorpaySignature,
-    },
-  });
-
-  // Calculate duration in days
-  let durationDays: number | undefined;
-  if (order.planTier === 'PRO_MONTHLY') {
-    durationDays = 30;
-  } else if (order.planTier === 'PRO_ANNUAL') {
-    durationDays = 365;
-  } else if (order.planTier === 'LIFETIME') {
-    durationDays = undefined;
-  }
-
-  // Grant user plan
-  await grantUserPlan(prisma, order.userId, order.planTier, durationDays);
-
-  // Send push or in-app notification
-  try {
-    await prisma.notification.create({
+    const durationDays = order.planTier === 'PRO_MONTHLY' ? 30 : order.planTier === 'PRO_ANNUAL' ? 365 : undefined;
+    await grantUserPlan(tx as any, order.userId, order.planTier, durationDays);
+    await tx.notification.create({
       data: {
         userId: order.userId,
         type: 'subscription_upgraded',
@@ -319,15 +297,10 @@ export async function fulfillPayment(
         },
       },
     });
-  } catch (err) {
-    console.error('Failed to create subscription notification:', err);
-  }
 
-  return {
-    success: true,
-    order: updatedOrder,
-    message: `Successfully activated ${order.planTier} subscription!`,
-  };
+    const updatedOrder = await tx.paymentOrder.findUniqueOrThrow({ where: { id: order.id } });
+    return { success: true, order: updatedOrder, message: `Successfully activated ${order.planTier} subscription!` };
+  });
 }
 
 /**

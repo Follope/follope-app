@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, Pressable, TextInput, Modal, Linking, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, Pressable, TextInput, Modal, Linking, ActivityIndicator, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronRight, LogOut, Crown, Sparkles, Gift, Share2, Copy, Check } from 'lucide-react-native';
@@ -79,7 +79,7 @@ export default function SettingsScreen() {
     try {
       const refreshToken = await getStoredRefreshToken();
       if (refreshToken) {
-        await api.post('/auth/logout', { refreshToken }).catch(() => null);
+        await api.post('/auth/logout', Platform.OS === 'web' ? {} : { refreshToken }).catch(() => null);
       }
     } finally {
       await clearSession();

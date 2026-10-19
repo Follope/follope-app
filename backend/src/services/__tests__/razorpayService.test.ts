@@ -117,10 +117,15 @@ describe('Razorpay Payment Gateway Service Tests', () => {
         razorpayOrderId: 'order_rzp_999',
       };
 
-      const mockPrisma = {
+      let currentOrder: any = { ...pendingOrder };
+      const mockPrisma: any = {
         paymentOrder: {
-          findUnique: vi.fn(() => Promise.resolve(pendingOrder)),
-          update: vi.fn(({ data }) => Promise.resolve({ ...pendingOrder, ...data })),
+          findUnique: vi.fn(() => Promise.resolve(currentOrder)),
+          findUniqueOrThrow: vi.fn(() => Promise.resolve(currentOrder)),
+          updateMany: vi.fn(({ data }) => {
+            currentOrder = { ...currentOrder, ...data };
+            return Promise.resolve({ count: 1 });
+          }),
         },
         subscription: {
           findUnique: vi.fn(() => Promise.resolve(null)),
@@ -129,7 +134,8 @@ describe('Razorpay Payment Gateway Service Tests', () => {
         notification: {
           create: vi.fn(() => Promise.resolve({ id: 'notif_1' })),
         },
-      } as any;
+      };
+      mockPrisma.$transaction = vi.fn((callback: any) => callback(mockPrisma));
 
       const fulfillment = await fulfillPayment(mockPrisma, {
         paymentOrderId: 'po_999',
@@ -138,9 +144,9 @@ describe('Razorpay Payment Gateway Service Tests', () => {
       });
 
       expect(fulfillment.success).toBe(true);
-      expect(mockPrisma.paymentOrder.update).toHaveBeenCalledWith(
+      expect(mockPrisma.paymentOrder.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: 'po_999' },
+          where: { id: 'po_999', status: { not: 'SUCCESS' } },
           data: expect.objectContaining({
             status: 'SUCCESS',
             razorpayPaymentId: 'pay_complete_123',
@@ -168,15 +174,16 @@ describe('Razorpay Payment Gateway Service Tests', () => {
         razorpayPaymentId: 'pay_existing_123',
       };
 
-      const mockPrisma = {
+      const mockPrisma: any = {
         paymentOrder: {
           findUnique: vi.fn(() => Promise.resolve(alreadySuccessfulOrder)),
-          update: vi.fn(),
+          updateMany: vi.fn(),
         },
         subscription: {
           upsert: vi.fn(),
         },
-      } as any;
+      };
+      mockPrisma.$transaction = vi.fn((callback: any) => callback(mockPrisma));
 
       const res = await fulfillPayment(mockPrisma, {
         paymentOrderId: 'po_already_paid',
@@ -185,7 +192,7 @@ describe('Razorpay Payment Gateway Service Tests', () => {
 
       expect(res.success).toBe(true);
       expect(res.message).toContain('already processed');
-      expect(mockPrisma.paymentOrder.update).not.toHaveBeenCalled();
+      expect(mockPrisma.paymentOrder.updateMany).not.toHaveBeenCalled();
       expect(mockPrisma.subscription.upsert).not.toHaveBeenCalled();
     });
   });

@@ -2,7 +2,6 @@ import { Router } from 'express';
 import type { PrismaClient } from '@prisma/client';
 import { createAuthService, AuthError } from '../services/authService.js';
 import {
-  registerSchema,
   loginSchema,
   refreshSchema,
   forgotPasswordSchema,
@@ -14,7 +13,7 @@ import {
   forgotPasswordSendOtpSchema,
   forgotPasswordVerifyOtpSchema,
 } from '../lib/validation.js';
-import { loginRateLimit, loginRateLimitByEmail, registerRateLimit, rateLimit } from '../middleware/rateLimit.js';
+import { loginRateLimit, loginRateLimitByEmail, rateLimit } from '../middleware/rateLimit.js';
 import { requireAuth, type AuthedRequest } from '../middleware/requireAuth.js';
 
 export function createAuthRouter(prisma: PrismaClient) {
@@ -25,29 +24,6 @@ export function createAuthRouter(prisma: PrismaClient) {
   // stolen refresh token could otherwise be hammered indefinitely trying
   // to race the rotation logic or just to DoS the endpoint.
   const refreshRateLimit = rateLimit({ windowMs: 60_000, max: 20 });
-
-  router.post('/register', registerRateLimit, async (req, res) => {
-    const parsed = registerSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({
-        error: { code: 'VALIDATION_ERROR', message: parsed.error.issues[0]?.message ?? 'Invalid input' },
-      });
-    }
-
-    try {
-      const result = await authService.register(parsed.data, {
-        userAgent: req.headers['user-agent'],
-        ip: req.ip,
-      });
-      return res.status(201).json({ data: result });
-    } catch (err) {
-      if (err instanceof AuthError) {
-        return res.status(400).json({ error: { code: err.code, message: err.message } });
-      }
-      console.error('register error', err);
-      return res.status(500).json({ error: { code: 'INTERNAL', message: 'Something went wrong. Please try again.' } });
-    }
-  });
 
   router.post('/login', loginRateLimit, loginRateLimitByEmail, async (req, res) => {
     const parsed = loginSchema.safeParse(req.body);
@@ -60,7 +36,7 @@ export function createAuthRouter(prisma: PrismaClient) {
         userAgent: req.headers['user-agent'],
         ip: req.ip,
       });
-      return res.json({ data: result });
+      return res.json({ data: sessionForClient(req, res, result) });
     } catch (err) {
       if (err instanceof AuthError) {
         return res.status(401).json({ error: { code: err.code, message: err.message } });
@@ -71,17 +47,21 @@ export function createAuthRouter(prisma: PrismaClient) {
   });
 
   router.post('/refresh', refreshRateLimit, async (req, res) => {
-    const parsed = refreshSchema.safeParse(req.body);
+    const parsed = refreshSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid request' } });
     }
 
     try {
-      const result = await authService.refresh(parsed.data.refreshToken, {
+      const refreshToken = parsed.data.refreshToken ?? readCookie(req.headers.cookie, REFRESH_COOKIE);
+      if (!refreshToken) {
+        return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid request' } });
+      }
+      const result = await authService.refresh(refreshToken, {
         userAgent: req.headers['user-agent'],
         ip: req.ip,
       });
-      return res.json({ data: result });
+      return res.json({ data: sessionForClient(req, res, result) });
     } catch (err) {
       if (err instanceof AuthError) {
         return res.status(401).json({ error: { code: err.code, message: err.message } });
@@ -92,16 +72,18 @@ export function createAuthRouter(prisma: PrismaClient) {
   });
 
   router.post('/logout', async (req, res) => {
-    const parsed = refreshSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(200).json({ data: { success: true } }); // logout is idempotent either way
-    }
-    await authService.logout(parsed.data.refreshToken);
+    const parsed = refreshSchema.safeParse(req.body ?? {});
+    const refreshToken = parsed.success
+      ? parsed.data.refreshToken ?? readCookie(req.headers.cookie, REFRESH_COOKIE)
+      : undefined;
+    if (refreshToken) await authService.logout(refreshToken);
+    clearRefreshCookie(res);
     return res.json({ data: { success: true } });
   });
 
   router.post('/logout-all', requireAuth, async (req: AuthedRequest, res) => {
     await authService.logoutAllDevices(req.userId!);
+    clearRefreshCookie(res);
     return res.json({ data: { success: true } });
   });
 
@@ -176,7 +158,7 @@ export function createAuthRouter(prisma: PrismaClient) {
         userAgent: req.headers['user-agent'],
         ip: req.ip,
       });
-      return res.json({ data: result });
+      return res.json({ data: sessionForClient(req, res, result) });
     } catch (err) {
       if (err instanceof AuthError) {
         return res.status(401).json({ error: { code: err.code, message: err.message } });
@@ -222,7 +204,7 @@ export function createAuthRouter(prisma: PrismaClient) {
         userAgent: req.headers['user-agent'],
         ip: req.ip,
       });
-      return res.status(201).json({ data: result });
+      return res.status(201).json({ data: sessionForClient(req, res, result) });
     } catch (err) {
       if (err instanceof AuthError) {
         return res.status(400).json({ error: { code: err.code, message: err.message } });
@@ -276,4 +258,43 @@ export function createAuthRouter(prisma: PrismaClient) {
   });
 
   return router;
+}
+
+const REFRESH_COOKIE = 'follope_refresh';
+
+function readCookie(header: string | undefined, name: string): string | undefined {
+  if (!header) return undefined;
+  for (const part of header.split(';')) {
+    const [key, ...value] = part.trim().split('=');
+    if (key === name) return decodeURIComponent(value.join('='));
+  }
+  return undefined;
+}
+
+function setRefreshCookie(res: import('express').Response, token: string) {
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  res.setHeader(
+    'Set-Cookie',
+    `${REFRESH_COOKIE}=${encodeURIComponent(token)}; HttpOnly${secure}; SameSite=Lax; Path=/v1/auth; Max-Age=${30 * 24 * 60 * 60}`
+  );
+}
+
+function clearRefreshCookie(res: import('express').Response) {
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `${REFRESH_COOKIE}=; HttpOnly${secure}; SameSite=Lax; Path=/v1/auth; Max-Age=0`);
+}
+
+function sessionForClient<T extends { refreshToken: string }>(
+  req: import('express').Request,
+  res: import('express').Response,
+  session: T
+): T | Omit<T, 'refreshToken'> {
+  // Browsers use an HttpOnly cookie. Native clients have no Origin header and
+  // continue receiving the token for storage in Keychain/Keystore.
+  if (req.headers.origin) {
+    setRefreshCookie(res, session.refreshToken);
+    const { refreshToken: _refreshToken, ...safeSession } = session;
+    return safeSession;
+  }
+  return session;
 }

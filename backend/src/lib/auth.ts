@@ -27,6 +27,11 @@ export interface AccessTokenPayload {
   type: 'access';
 }
 
+export interface AdminTokenPayload {
+  sub: 'admin';
+  type: 'admin';
+}
+
 export function signAccessToken(userId: string): string {
   const payload: AccessTokenPayload = { sub: userId, type: 'access' };
   return jwt.sign(payload, getJwtSecret(), { expiresIn: ACCESS_TOKEN_TTL });
@@ -36,6 +41,20 @@ export function verifyAccessToken(token: string): AccessTokenPayload {
   const decoded = jwt.verify(token, getJwtSecret()) as AccessTokenPayload;
   if (decoded.type !== 'access') {
     throw new Error('Not an access token');
+  }
+  return decoded;
+}
+
+/** Short-lived token issued only after the master admin secret is verified. */
+export function signAdminToken(): string {
+  const payload: AdminTokenPayload = { sub: 'admin', type: 'admin' };
+  return jwt.sign(payload, getJwtSecret(), { expiresIn: '30m' });
+}
+
+export function verifyAdminToken(token: string): AdminTokenPayload {
+  const decoded = jwt.verify(token, getJwtSecret()) as AdminTokenPayload;
+  if (decoded.type !== 'admin' || decoded.sub !== 'admin') {
+    throw new Error('Not an admin token');
   }
   return decoded;
 }
@@ -105,4 +124,3 @@ export function generateOtpCode(): { code: string; hash: string; expiresAt: Date
 export function hashOtpCode(code: string): string {
   return createHash('sha256').update(code.trim()).digest('hex');
 }
-

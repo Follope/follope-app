@@ -157,7 +157,7 @@ describe('Subscription, Quotas & Referral Security Tests', () => {
           if (where.code === 'WELCOMEPRO') return Promise.resolve(mockCoupon);
           return Promise.resolve(null);
         }),
-        update: vi.fn(() => Promise.resolve(mockCoupon)),
+        updateMany: vi.fn(() => Promise.resolve({ count: 1 })),
       },
       couponRedemption: {
         findUnique: vi.fn(({ where }: any) => {
@@ -173,7 +173,7 @@ describe('Subscription, Quotas & Referral Security Tests', () => {
         findUnique: vi.fn(() => Promise.resolve(null)),
         upsert: vi.fn(() => Promise.resolve({ tier: 'PRO_MONTHLY', status: 'ACTIVE' })),
       },
-      $transaction: vi.fn((ops: any) => Promise.all(ops)),
+      $transaction: vi.fn((callback: any) => callback(mockPrismaCoupon)),
     } as any;
 
     // First user succeeds
@@ -208,7 +208,7 @@ describe('Subscription, Quotas & Referral Security Tests', () => {
             referrer: { id: 'user_referrer', name: 'Original User' },
           })
         ),
-        update: vi.fn(() => Promise.resolve({})),
+        updateMany: vi.fn(() => Promise.resolve({ count: 1 })),
       },
       subscription: {
         findUnique: vi.fn(() => Promise.resolve(null)),
@@ -222,6 +222,7 @@ describe('Subscription, Quotas & Referral Security Tests', () => {
         create: vi.fn(() => Promise.resolve({})),
       },
     } as any;
+    mockPrismaReferral.$transaction = vi.fn((callback: any) => callback(mockPrismaReferral));
 
     const triggered = await checkAndRewardReferralOnFirstInvoice(mockPrismaReferral, 'user_referee');
     expect(triggered).toBe(true);

@@ -92,7 +92,13 @@ export function createAuthService(prisma: PrismaClient, emailService: EmailServi
       // token replay — if a stolen token is used after rotation, the
       // legitimate rotated session and the attacker's stale one diverge,
       // which is a signal you could alert on (not implemented here).
-      await prisma.session.update({ where: { id: session.id }, data: { revokedAt: new Date() } });
+      const claimed = await prisma.session.updateMany({
+        where: { id: session.id, revokedAt: null, expiresAt: { gt: new Date() } },
+        data: { revokedAt: new Date() },
+      });
+      if (claimed.count !== 1) {
+        throw new AuthError('Session expired or invalid. Please sign in again.', 'SESSION_INVALID');
+      }
 
       return issueSession(prisma, session.userId, ctx);
     },
@@ -169,7 +175,8 @@ export function createAuthService(prisma: PrismaClient, emailService: EmailServi
         });
 
         const resetUrl = `${appBaseUrl}/reset-password?token=${token}`;
-        await emailService.sendPasswordResetEmail(user.email, user.name, resetUrl);
+      const sent = await emailService.sendPasswordResetEmail(user.email, user.name, resetUrl);
+      if (!sent) throw new AuthError('Email delivery is temporarily unavailable. Please try again later.', 'EMAIL_DELIVERY_FAILED');
         await prisma.auditLog.create({
           data: { userId: user.id, action: 'password_reset_requested' },
         });
@@ -243,7 +250,8 @@ export function createAuthService(prisma: PrismaClient, emailService: EmailServi
         },
       });
 
-      await emailService.sendOtpEmail(email, code);
+      const sent = await emailService.sendOtpEmail(email, code);
+      if (!sent) throw new AuthError('Email delivery is temporarily unavailable. Please try again later.', 'EMAIL_DELIVERY_FAILED');
 
       return {
         success: true,
@@ -339,7 +347,8 @@ export function createAuthService(prisma: PrismaClient, emailService: EmailServi
         },
       });
 
-      await emailService.sendOtpEmail(email, code);
+      const sent = await emailService.sendOtpEmail(email, code);
+      if (!sent) throw new AuthError('Email delivery is temporarily unavailable. Please try again later.', 'EMAIL_DELIVERY_FAILED');
 
       return {
         success: true,
@@ -433,7 +442,8 @@ export function createAuthService(prisma: PrismaClient, emailService: EmailServi
           },
         });
 
-        await emailService.sendOtpEmail(email, code);
+        const sent = await emailService.sendOtpEmail(email, code);
+        if (!sent) throw new AuthError('Email delivery is temporarily unavailable. Please try again later.', 'EMAIL_DELIVERY_FAILED');
         await prisma.auditLog.create({
           data: { userId: user.id, action: 'forgot_password_otp_requested' },
         });
@@ -512,9 +522,16 @@ async function issueSession(
   userId: string,
   ctx: { userAgent?: string; ip?: string }
 ) {
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: { id: true, name: true, email: true, isBanned: true },
+  });
+  if (user.isBanned) {
+    throw new AuthError('Your account has been suspended. Please contact support@follope.com.', 'ACCOUNT_BANNED');
+  }
+
   const accessToken = signAccessToken(userId);
   const { token: refreshToken, hash, expiresAt } = generateRefreshToken();
-
   await prisma.session.create({
     data: {
       userId,
@@ -525,10 +542,6 @@ async function issueSession(
     },
   });
 
-  const user = await prisma.user.findUniqueOrThrow({
-    where: { id: userId },
-    select: { id: true, name: true, email: true },
-  });
-
-  return { user, accessToken, refreshToken };
+  const { isBanned: _isBanned, ...publicUser } = user;
+  return { user: publicUser, accessToken, refreshToken };
 }

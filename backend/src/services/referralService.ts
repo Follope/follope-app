@@ -81,34 +81,27 @@ export async function checkAndRewardReferralOnFirstInvoice(
   const config = await getPlanConfig(prisma);
   const rewardDays = Math.max(1, config.referralRewardMonths) * 30;
 
-  // Mark referral rewarded
-  await prisma.referral.update({
-    where: { id: referral.id },
-    data: {
-      rewardGranted: true,
-      rewardedAt: new Date(),
-    },
-  });
+  return prisma.$transaction(async (tx) => {
+    const claimed = await tx.referral.updateMany({
+      where: { id: referral.id, rewardGranted: false },
+      data: { rewardGranted: true, rewardedAt: new Date() },
+    });
+    if (claimed.count !== 1) return false;
 
-  // Grant Pro to both users
-  await Promise.all([
-    grantUserPlan(prisma, referral.referrerId, 'PRO_MONTHLY', rewardDays),
-    grantUserPlan(prisma, refereeId, 'PRO_MONTHLY', rewardDays),
-  ]);
-
-  // Create notification for referrer
-  await prisma.notification.create({
-    data: {
-      userId: referral.referrerId,
-      type: 'referral_reward',
-      payload: {
-        title: '🎉 You earned free Pro!',
-        body: `${referral.referee.name} created their first invoice. You both received ${config.referralRewardMonths} month(s) of free Pro!`,
+    await grantUserPlan(tx as any, referral.referrerId, 'PRO_MONTHLY', rewardDays);
+    await grantUserPlan(tx as any, refereeId, 'PRO_MONTHLY', rewardDays);
+    await tx.notification.create({
+      data: {
+        userId: referral.referrerId,
+        type: 'referral_reward',
+        payload: {
+          title: 'You earned free Pro!',
+          body: `${referral.referee.name} created their first invoice. You both received ${config.referralRewardMonths} month(s) of free Pro!`,
+        },
       },
-    },
+    });
+    return true;
   });
-
-  return true;
 }
 
 /**

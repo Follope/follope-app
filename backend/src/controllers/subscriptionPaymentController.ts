@@ -6,6 +6,7 @@ import {
   verifyPaymentSignature,
   isRazorpayConfigured,
 } from '../services/razorpayService.js';
+import { grantUserPlan } from '../services/subscriptionService.js';
 
 export function createSubscriptionPaymentController(prisma: PrismaClient) {
   return {
@@ -16,7 +17,7 @@ export function createSubscriptionPaymentController(prisma: PrismaClient) {
           return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Authentication required' } });
         }
 
-        const { planTier, callbackUrl } = req.body;
+        const { planTier } = req.body;
         if (!planTier || !['PRO_MONTHLY', 'PRO_ANNUAL', 'LIFETIME'].includes(planTier)) {
           return res.status(400).json({
             error: { code: 'INVALID_INPUT', message: 'Valid planTier (PRO_MONTHLY, PRO_ANNUAL, LIFETIME) is required' },
@@ -26,7 +27,6 @@ export function createSubscriptionPaymentController(prisma: PrismaClient) {
         const session = await createPaymentOrder(prisma, {
           userId,
           planTier,
-          callbackUrl,
         });
 
         return res.json({ data: session });
@@ -69,6 +69,12 @@ export function createSubscriptionPaymentController(prisma: PrismaClient) {
           });
         }
 
+        if (!order.razorpayOrderId || razorpayOrderId !== order.razorpayOrderId) {
+          return res.status(400).json({
+            error: { code: 'ORDER_MISMATCH', message: 'Payment does not belong to this checkout order' },
+          });
+        }
+
         // Mandatory signature verification whenever Razorpay is configured or running in production
         const enforceSignature = isRazorpayConfigured() || process.env.NODE_ENV === 'production';
         if (enforceSignature) {
@@ -81,7 +87,7 @@ export function createSubscriptionPaymentController(prisma: PrismaClient) {
             });
           }
 
-          const isValid = verifyPaymentSignature(razorpayOrderId, razorpayPaymentId, razorpaySignature);
+          const isValid = verifyPaymentSignature(order.razorpayOrderId, razorpayPaymentId, razorpaySignature);
           if (!isValid) {
             return res.status(400).json({
               error: { code: 'INVALID_SIGNATURE', message: 'Payment verification failed' },
@@ -90,7 +96,7 @@ export function createSubscriptionPaymentController(prisma: PrismaClient) {
         } else {
           // In development sandbox mode without Razorpay API keys:
           if (razorpaySignature && razorpayOrderId) {
-            const isValid = verifyPaymentSignature(razorpayOrderId, razorpayPaymentId, razorpaySignature);
+            const isValid = verifyPaymentSignature(order.razorpayOrderId, razorpayPaymentId, razorpaySignature);
             if (!isValid) {
               return res.status(400).json({
                 error: { code: 'INVALID_SIGNATURE', message: 'Payment verification failed' },
@@ -119,54 +125,52 @@ export function createSubscriptionPaymentController(prisma: PrismaClient) {
       }
     },
 
+    async syncIap(req: Request, res: Response) {
+      try {
+        const userId = (req as any).userId || (req as any).user?.id;
+        if (!userId) {
+          return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Authentication required' } });
+        }
+
+        const { planTier, productId, transactionId } = req.body;
+        if (!planTier || !['PRO_MONTHLY', 'PRO_ANNUAL', 'LIFETIME'].includes(planTier)) {
+          return res.status(400).json({
+            error: { code: 'INVALID_INPUT', message: 'Valid planTier (PRO_MONTHLY, PRO_ANNUAL, LIFETIME) is required' },
+          });
+        }
+
+        const durationDays = planTier === 'PRO_MONTHLY' ? 30 : planTier === 'PRO_ANNUAL' ? 365 : undefined;
+        const sub = await grantUserPlan(prisma, userId, planTier, durationDays);
+
+        return res.json({ data: { success: true, subscription: sub } });
+      } catch (err: any) {
+        console.error('Error syncing IAP subscription:', err);
+        return res.status(500).json({
+          error: { code: 'IAP_SYNC_FAILED', message: err.message || 'Failed to sync IAP subscription' },
+        });
+      }
+    },
+
     async paymentCallback(req: Request, res: Response) {
       const orderDbId = req.query.orderDbId as string;
-      const mock = req.query.mock === 'true';
-      const rzpPaymentId = req.query.razorpay_payment_id as string | undefined;
-      const rzpOrderId = (req.query.razorpay_order_id as string) || (req.query.razorpay_payment_link_id as string);
-      const rzpSignature = req.query.razorpay_signature as string | undefined;
-
-      const isProduction = process.env.NODE_ENV === 'production';
-
-      // Security check: Never allow mock payments in production
-      if (mock && isProduction) {
-        return res.status(403).send('Mock payments are strictly disabled in production.');
-      }
-
-      // In production, require cryptographic verification before any callback fulfillment
-      if (orderDbId && rzpPaymentId) {
-        try {
-          if (rzpSignature && rzpOrderId) {
-            const isValid = verifyPaymentSignature(rzpOrderId, rzpPaymentId, rzpSignature);
-            if (isValid) {
-              await fulfillPayment(prisma, {
-                paymentOrderId: orderDbId,
-                razorpayOrderId: rzpOrderId,
-                razorpayPaymentId: rzpPaymentId,
-                razorpaySignature: rzpSignature,
-              });
-            } else {
-              console.warn('Tampered signature on paymentCallback for order:', orderDbId);
-            }
-          } else if (mock && !isProduction) {
-            // Local dev / test sandbox mock fulfillment
-            await fulfillPayment(prisma, {
-              paymentOrderId: orderDbId,
-              razorpayPaymentId: `mock_pay_${Date.now()}`,
-            });
-          }
-        } catch (err) {
-          console.error('Auto-fulfillment on callback error:', err);
-        }
-      }
+      // Payment Links redirect the browser here, but only the signed webhook
+      // may grant a subscription. URL parameters are not proof of payment.
+      const order = orderDbId
+        ? await prisma.paymentOrder.findUnique({ where: { id: orderDbId }, select: { status: true } }).catch(() => null)
+        : null;
+      const succeeded = order?.status === 'SUCCESS';
 
       res.setHeader('Content-Type', 'text/html');
+      res.setHeader(
+        'Content-Security-Policy',
+        "default-src 'self'; script-src https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'"
+      );
       return res.send(`<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Payment Successful - Follope Pro</title>
+  <title>${succeeded ? 'Payment Successful' : 'Payment Processing'} - Follope Pro</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-neutral-950 text-white min-h-screen flex items-center justify-center p-4">
@@ -176,9 +180,11 @@ export function createSubscriptionPaymentController(prisma: PrismaClient) {
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
       </svg>
     </div>
-    <h1 class="text-2xl font-bold mb-2">🎉 Payment Successful!</h1>
+    <h1 class="text-2xl font-bold mb-2">${succeeded ? 'Payment Successful!' : 'Payment is processing'}</h1>
     <p class="text-neutral-400 text-sm mb-6">
-      Your Follope Pro subscription is now active. You have unlocked unlimited invoices and all Pro features!
+      ${succeeded
+        ? 'Your Follope Pro subscription is active.'
+        : 'We are waiting for secure confirmation from the payment provider. Your plan will update after the signed webhook is processed.'}
     </p>
     <a href="follope://subscription-success" class="inline-flex items-center justify-center w-full py-3.5 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-2xl shadow-lg transition-colors">
       Open Follope App
@@ -187,11 +193,6 @@ export function createSubscriptionPaymentController(prisma: PrismaClient) {
       If the app didn't open automatically, click the button above.
     </p>
   </div>
-  <script>
-    setTimeout(function() {
-      window.location.href = 'follope://subscription-success';
-    }, 1500);
-  </script>
 </body>
 </html>`);
     },

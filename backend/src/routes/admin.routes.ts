@@ -3,6 +3,7 @@ import type { PrismaClient } from '@prisma/client';
 import { createAdminController } from '../controllers/adminController.js';
 import { createRequireAdmin } from '../middleware/requireAdmin.js';
 import { getAdminHtml } from '../views/adminHtml.js';
+import { rateLimit } from '../middleware/rateLimit.js';
 
 export function createAdminRouter(prisma: PrismaClient) {
   const router = Router();
@@ -12,8 +13,11 @@ export function createAdminRouter(prisma: PrismaClient) {
   // 1. Serve Admin Web Panel UI at /admin
   router.get('/', (_req, res) => {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    // Allow scripts and CDNs for modern admin experience
-    res.setHeader('Content-Security-Policy', "default-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:;");
+    // Restrict external resources to the exact providers used by this page.
+    res.setHeader(
+      'Content-Security-Policy',
+      "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+    );
     return res.send(getAdminHtml());
   });
 
@@ -26,7 +30,7 @@ export function createAdminApiRouter(prisma: PrismaClient) {
   const requireAdmin = createRequireAdmin(prisma);
 
   // Public admin auth verification
-  router.post('/auth/login', adminController.login);
+  router.post('/auth/login', rateLimit({ windowMs: 15 * 60_000, max: 10 }), adminController.login);
 
   // Protected Admin endpoints
   router.use(requireAdmin);

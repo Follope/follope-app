@@ -41,65 +41,45 @@ export async function redeemCoupon(
   rawCode: string
 ): Promise<{ coupon: Coupon; message: string }> {
   const code = rawCode.trim().toUpperCase();
+  return prisma.$transaction(async (tx) => {
+    const coupon = await tx.coupon.findUnique({ where: { code } });
+    if (!coupon || !coupon.isActive) {
+      throw new ApiError(404, 'INVALID_COUPON', 'Invalid or expired coupon code.');
+    }
+    if (coupon.expiresAt && coupon.expiresAt < new Date()) {
+      throw new ApiError(400, 'COUPON_EXPIRED', 'This coupon code has expired.');
+    }
 
-  const coupon = await prisma.coupon.findUnique({
-    where: { code },
+    const existingRedemption = await tx.couponRedemption.findUnique({
+      where: { couponId_userId: { couponId: coupon.id, userId } },
+    });
+    if (existingRedemption) {
+      throw new ApiError(400, 'ALREADY_REDEEMED', 'You have already redeemed this coupon.');
+    }
+
+    const claimed = await tx.coupon.updateMany({
+      where: {
+        id: coupon.id,
+        isActive: true,
+        ...(coupon.maxUses === null ? {} : { usedCount: { lt: coupon.maxUses } }),
+      },
+      data: { usedCount: { increment: 1 } },
+    });
+    if (claimed.count !== 1) {
+      throw new ApiError(400, 'COUPON_EXHAUSTED', 'This coupon has reached its maximum redemptions.');
+    }
+
+    await tx.couponRedemption.create({ data: { couponId: coupon.id, userId } });
+    const daysGranted = coupon.discountType === 'FREE_PRO_MONTHS'
+      ? Math.max(1, coupon.discountValue) * 30
+      : 30;
+    await grantUserPlan(tx as any, userId, 'PRO_MONTHLY', daysGranted);
+
+    return {
+      coupon,
+      message: `Coupon applied successfully! You received ${Math.round(daysGranted / 30)} month(s) of Pro for free.`,
+    };
   });
-
-  if (!coupon || !coupon.isActive) {
-    throw new ApiError(404, 'INVALID_COUPON', 'Invalid or expired coupon code.');
-  }
-
-  if (coupon.expiresAt && coupon.expiresAt < new Date()) {
-    throw new ApiError(400, 'COUPON_EXPIRED', 'This coupon code has expired.');
-  }
-
-  if (coupon.maxUses !== null && coupon.usedCount >= coupon.maxUses) {
-    throw new ApiError(400, 'COUPON_EXHAUSTED', 'This coupon has reached its maximum redemptions.');
-  }
-
-  const existingRedemption = await prisma.couponRedemption.findUnique({
-    where: {
-      couponId_userId: {
-        couponId: coupon.id,
-        userId,
-      },
-    },
-  });
-
-  if (existingRedemption) {
-    throw new ApiError(400, 'ALREADY_REDEEMED', 'You have already redeemed this coupon.');
-  }
-
-  // Transactionally record redemption and grant plan
-  let daysGranted = 30;
-  if (coupon.discountType === 'FREE_PRO_MONTHS') {
-    daysGranted = Math.max(1, coupon.discountValue) * 30;
-  } else if (coupon.discountType === 'PERCENTAGE' && coupon.discountValue === 100) {
-    daysGranted = 30;
-  }
-
-  await prisma.$transaction([
-    prisma.couponRedemption.create({
-      data: {
-        couponId: coupon.id,
-        userId,
-      },
-    }),
-    prisma.coupon.update({
-      where: { id: coupon.id },
-      data: {
-        usedCount: { increment: 1 },
-      },
-    }),
-  ]);
-
-  await grantUserPlan(prisma, userId, 'PRO_MONTHLY', daysGranted);
-
-  return {
-    coupon,
-    message: `Coupon applied successfully! You received ${Math.round(daysGranted / 30)} month(s) of Pro for free.`,
-  };
 }
 
 export async function listCoupons(prisma: PrismaClient): Promise<Coupon[]> {

@@ -73,7 +73,7 @@ export default function SignupScreen() {
     setFormError(null);
     setIsSubmitting(true);
     try {
-      const result = await api.post<{ user: AuthUser; accessToken: string; refreshToken: string }>(
+      const result = await api.post<{ user: AuthUser; accessToken: string; refreshToken?: string }>(
         '/auth/register/verify',
         {
           name: registrationData.name.trim(),

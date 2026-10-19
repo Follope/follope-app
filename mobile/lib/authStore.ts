@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 
 const REFRESH_TOKEN_KEY = 'follope_refresh_token';
+const WEB_COOKIE_SESSION = '__cookie_session__';
 
 /**
  * Cross-platform storage helper that falls back to localStorage on Web
@@ -12,7 +13,7 @@ const storage = {
   async getItem(key: string): Promise<string | null> {
     if (Platform.OS === 'web') {
       try {
-        return typeof window !== 'undefined' ? localStorage.getItem(key) : null;
+        return typeof window !== 'undefined' && localStorage.getItem(key) === '1' ? WEB_COOKIE_SESSION : null;
       } catch {
         return null;
       }
@@ -24,7 +25,9 @@ const storage = {
     if (Platform.OS === 'web') {
       try {
         if (typeof window !== 'undefined') {
-          localStorage.setItem(key, value);
+          // The actual refresh token is an HttpOnly API cookie. This is only
+          // a non-sensitive hint that a cookie-backed session may exist.
+          localStorage.setItem(key, '1');
         }
       } catch (e) {
         console.error('Failed to set localStorage key:', e);
@@ -61,7 +64,7 @@ interface AuthState {
   isHydrating: boolean; // true while checking storage on app launch
   isAuthenticated: boolean;
 
-  setSession: (user: AuthUser, accessToken: string, refreshToken: string) => Promise<void>;
+  setSession: (user: AuthUser, accessToken: string, refreshToken?: string) => Promise<void>;
   setAccessToken: (accessToken: string) => void; // used after a silent refresh
   clearSession: () => Promise<void>;
   hydrate: () => Promise<string | null>; // returns the stored refresh token, if any
@@ -82,7 +85,9 @@ export const useAuthStore = create<AuthState>((set) => ({
   isAuthenticated: false,
 
   setSession: async (user, accessToken, refreshToken) => {
-    await storage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+    if (Platform.OS === 'web' || refreshToken) {
+      await storage.setItem(REFRESH_TOKEN_KEY, refreshToken ?? WEB_COOKIE_SESSION);
+    }
     set({ user, accessToken, isAuthenticated: true, isHydrating: false });
   },
 

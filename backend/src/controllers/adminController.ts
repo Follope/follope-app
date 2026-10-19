@@ -5,7 +5,7 @@ import { getPlanConfig, updatePlanConfig, type UpdatePlanConfigInput } from '../
 import { grantUserPlan } from '../services/subscriptionService.js';
 import { createCoupon, listCoupons, toggleCouponStatus } from '../services/couponService.js';
 import { listPaymentOrders } from '../services/razorpayService.js';
-import { safeEqual, getAdminSecret } from '../lib/auth.js';
+import { safeEqual, getAdminSecret, signAdminToken } from '../lib/auth.js';
 import { ApiError } from '../utils/errors.js';
 
 export function createAdminController(prisma: PrismaClient) {
@@ -28,7 +28,7 @@ export function createAdminController(prisma: PrismaClient) {
 
       return res.json({
         data: {
-          token: masterSecret,
+          token: signAdminToken(),
           role: 'ADMIN',
           message: 'Admin authorization successful.',
         },
@@ -257,7 +257,15 @@ export function createAdminController(prisma: PrismaClient) {
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'User not found' } });
       }
 
-      const durationDays = days || (months ? months * 30 : tier === 'PRO_ANNUAL' ? 365 : 30);
+      const parsedDays = days === undefined ? undefined : Number(days);
+      const parsedMonths = months === undefined ? undefined : Number(months);
+      if (
+        (parsedDays !== undefined && (!Number.isInteger(parsedDays) || parsedDays < 1 || parsedDays > 3650)) ||
+        (parsedMonths !== undefined && (!Number.isInteger(parsedMonths) || parsedMonths < 1 || parsedMonths > 120))
+      ) {
+        return res.status(400).json({ error: { code: 'INVALID_DURATION', message: 'Plan duration is invalid.' } });
+      }
+      const durationDays = parsedDays ?? (parsedMonths ? parsedMonths * 30 : tier === 'PRO_ANNUAL' ? 365 : 30);
       const updatedSub = await grantUserPlan(prisma, id, tier, durationDays);
 
       return res.json({
@@ -282,6 +290,13 @@ export function createAdminController(prisma: PrismaClient) {
         data: { isBanned: Boolean(isBanned) },
         select: { id: true, email: true, name: true, isBanned: true },
       });
+
+      if (updated.isBanned) {
+        await prisma.session.updateMany({
+          where: { userId: id, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+      }
 
       return res.json({ data: updated });
     },

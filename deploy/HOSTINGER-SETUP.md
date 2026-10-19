@@ -111,8 +111,15 @@ POSTGRES_PASSWORD=generate_a_strong_password_here
 POSTGRES_DB=follope
 
 AUTH_SECRET=generate_with_openssl_rand_base64_48
+ADMIN_SECRET=generate_a_different_value_with_openssl_rand_base64_48
 ALLOWED_ORIGINS=https://follope.com,https://api.follope.com
 PUBLIC_APP_URL=https://follope.com
+PUBLIC_API_URL=https://api.follope.com
+
+# Razorpay live-mode credentials and a separately generated webhook secret
+RAZORPAY_KEY_ID=rzp_live_your_key_id
+RAZORPAY_KEY_SECRET=your_live_key_secret
+RAZORPAY_WEBHOOK_SECRET=your_webhook_secret
 
 # Optional Transactional Email (Resend)
 RESEND_API_KEY=re_your_api_key_here

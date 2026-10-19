@@ -5,7 +5,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       POSTGRES_DB: ${POSTGRES_DB:-follope}
     volumes:
       - follope_pgdata:/var/lib/postgresql/data
@@ -31,11 +31,27 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-follope}?schema=public
-      AUTH_SECRET: ${AUTH_SECRET}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/${POSTGRES_DB:-follope}?schema=public
+      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET must be set}
+      ADMIN_SECRET: ${ADMIN_SECRET:?ADMIN_SECRET must be set}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://follope.com,https://api.follope.com}
       PUBLIC_APP_URL: ${PUBLIC_APP_URL:-https://follope.com}
+      PUBLIC_API_URL: ${PUBLIC_API_URL:-https://api.follope.com}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
+      BREVO_API_KEY: ${BREVO_API_KEY:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      GMAIL_CLIENT_ID: ${GMAIL_CLIENT_ID:-}
+      GMAIL_CLIENT_SECRET: ${GMAIL_CLIENT_SECRET:-}
+      GMAIL_REFRESH_TOKEN: ${GMAIL_REFRESH_TOKEN:-}
+      GMAIL_USER: ${GMAIL_USER:-}
+      GMAIL_HTTP_WEBHOOK_URL: ${GMAIL_HTTP_WEBHOOK_URL:-}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:?RAZORPAY_KEY_ID must be set}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:?RAZORPAY_KEY_SECRET must be set}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:?RAZORPAY_WEBHOOK_SECRET must be set}
       EMAIL_FROM: ${EMAIL_FROM:-Follope <support@follope.com>}
       TRUST_PROXY: "true"
     networks:

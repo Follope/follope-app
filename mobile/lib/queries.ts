@@ -291,6 +291,7 @@ export function useSubscription() {
   return useQuery({
     queryKey: ['subscription'],
     queryFn: () => api.get<SubscriptionDetails>('/me/subscription'),
+    refetchOnMount: 'always',
   });
 }
 
@@ -329,6 +330,22 @@ export function useVerifyPayment() {
       razorpayPaymentId: string;
       razorpaySignature?: string;
     }) => api.post<{ success: boolean; message: string }>('/subscriptions/verify-payment', input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['subscription'] });
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    },
+  });
+}
+
+export function useSyncIap() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      planTier: 'PRO_MONTHLY' | 'PRO_ANNUAL' | 'LIFETIME';
+      productId?: string;
+      transactionId?: string;
+    }) => api.post<{ success: boolean; subscription: any }>('/subscriptions/sync-iap', input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['subscription'] });
       queryClient.invalidateQueries({ queryKey: ['invoices'] });

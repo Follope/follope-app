@@ -42,9 +42,9 @@ export function createApp(prisma: PrismaClient) {
         // In development or if explicitly listed, allow the origin
         if (
           process.env.NODE_ENV !== 'production' ||
-          allowedOriginsList.length === 0 ||
           allowedOriginsList.includes(origin) ||
-          /^http:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$/.test(origin)
+          (process.env.NODE_ENV !== 'production' &&
+            /^http:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$/.test(origin))
         ) {
           return callback(null, true);
         }
@@ -62,13 +62,21 @@ export function createApp(prisma: PrismaClient) {
     })
   );
 
-  app.get('/health', (_req, res) => res.json({ data: { status: 'ok' } }));
+  app.get('/live', (_req, res) => res.json({ data: { status: 'ok' } }));
+  app.get('/health', async (_req, res) => {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      return res.json({ data: { status: 'ok', database: 'connected' } });
+    } catch {
+      return res.status(503).json({ error: { code: 'NOT_READY', message: 'Database unavailable' } });
+    }
+  });
 
   app.use('/v1/auth', createAuthRouter(prisma));
   app.use('/v1/clients', createClientsRouter(prisma));
   app.use('/v1/invoices', createInvoicesRouter(prisma));
   // Public invoice endpoints are accessible by anyone worldwide
-  app.use('/v1/public', cors({ origin: true, credentials: true }), createPublicRouter(prisma));
+  app.use('/v1/public', cors({ origin: true, credentials: false }), createPublicRouter(prisma));
   app.use('/v1/me', createMeRouter(prisma));
   app.use('/v1/dashboard', createDashboardRouter(prisma));
   app.use('/v1/notifications', createNotificationRouter(prisma));

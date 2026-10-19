@@ -590,8 +590,11 @@ export function getAdminHtml(): string {
   </div>
 
   <script>
-    let adminToken = localStorage.getItem('follope_admin_token') || '';
+    // Admin sessions are short lived and tab-scoped. The master key itself
+    // is never persisted or returned by the API.
+    let adminToken = sessionStorage.getItem('follope_admin_token') || '';
     let currentUserPage = 1;
+    let currentUsersById = new Map();
 
     // Initialize state
     window.addEventListener('DOMContentLoaded', () => {
@@ -617,7 +620,7 @@ export function getAdminHtml(): string {
     }
 
     function logoutAdmin() {
-      localStorage.removeItem('follope_admin_token');
+      sessionStorage.removeItem('follope_admin_token');
       adminToken = '';
       showLogin();
     }
@@ -640,7 +643,7 @@ export function getAdminHtml(): string {
         }
 
         adminToken = data.data.token;
-        localStorage.setItem('follope_admin_token', adminToken);
+        sessionStorage.setItem('follope_admin_token', adminToken);
         showApp();
       } catch (err) {
         errBox.textContent = err.message || 'Invalid master key';
@@ -651,7 +654,7 @@ export function getAdminHtml(): string {
     async function verifyAndShowApp() {
       try {
         const res = await fetch('/v1/admin/metrics', {
-          headers: { 'x-admin-key': adminToken }
+          headers: { Authorization: \`Bearer \${adminToken}\` }
         });
         if (res.ok) {
           showApp();
@@ -685,14 +688,21 @@ export function getAdminHtml(): string {
 
     function showToast(message, isError = false) {
       const toast = document.getElementById('toast');
-      toast.innerHTML = \`<span class="\${isError ? 'text-rose-400' : 'text-emerald-400'} font-bold">\${isError ? '❌' : '✅'}</span> <span class="text-xs text-white">\${message}</span>\`;
+      toast.replaceChildren();
+      const icon = document.createElement('span');
+      icon.className = (isError ? 'text-rose-400' : 'text-emerald-400') + ' font-bold';
+      icon.textContent = isError ? 'Error:' : 'Success:';
+      const textNode = document.createElement('span');
+      textNode.className = 'text-xs text-white';
+      textNode.textContent = String(message ?? '');
+      toast.append(icon, document.createTextNode(' '), textNode);
       toast.classList.remove('hidden');
       setTimeout(() => toast.classList.add('hidden'), 3500);
     }
 
     async function loadMetrics() {
       try {
-        const res = await fetch('/v1/admin/metrics', { headers: { 'x-admin-key': adminToken } });
+        const res = await fetch('/v1/admin/metrics', { headers: { Authorization: \`Bearer \${adminToken}\` } });
         const { data } = await res.json();
         if (!data) return;
 
@@ -742,7 +752,7 @@ export function getAdminHtml(): string {
 
     async function loadPlanConfig() {
       try {
-        const res = await fetch('/v1/admin/config', { headers: { 'x-admin-key': adminToken } });
+        const res = await fetch('/v1/admin/config', { headers: { Authorization: \`Bearer \${adminToken}\` } });
         const { data } = await res.json();
         if (!data) return;
 
@@ -776,7 +786,7 @@ export function getAdminHtml(): string {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            'x-admin-key': adminToken,
+            Authorization: \`Bearer \${adminToken}\`,
           },
           body: JSON.stringify(payload),
         });
@@ -794,11 +804,12 @@ export function getAdminHtml(): string {
       const url = \`/v1/admin/users?page=\${page}&limit=15&search=\${encodeURIComponent(search)}&tier=\${encodeURIComponent(tier)}\`;
 
       try {
-        const res = await fetch(url, { headers: { 'x-admin-key': adminToken } });
+        const res = await fetch(url, { headers: { Authorization: \`Bearer \${adminToken}\` } });
         const { data } = await res.json();
         if (!data) return;
 
         const tbody = document.getElementById('usersTableBody');
+        currentUsersById = new Map((data.users || []).map(user => [user.id, user]));
         tbody.innerHTML = (data.users || []).map(u => \`
           <tr class="hover:bg-slate-800/30">
             <td class="py-3 px-3">
@@ -814,7 +825,7 @@ export function getAdminHtml(): string {
             <td class="py-3 px-3 text-slate-300 font-mono">\${u._count?.invoices || 0}</td>
             <td class="py-3 px-3 text-slate-400 font-mono text-[11px]">\${u.referralCode || '-'}</td>
             <td class="py-3 px-3 text-right space-x-1">
-              <button onclick="openGrantPlanModal('\${u.id}', '\${escapeHtml(u.name || u.email)}', '\${u.subscription?.tier || 'FREE'}')" class="px-2 py-1 bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 rounded text-[11px] font-semibold border border-orange-500/30">
+              <button onclick="openGrantPlanModal('\${escapeHtml(u.id)}')" class="px-2 py-1 bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 rounded text-[11px] font-semibold border border-orange-500/30">
                 Grant Pro
               </button>
               <button onclick="toggleBan('\${u.id}', \${!u.isBanned})" class="px-2 py-1 \${u.isBanned ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-rose-500/10 text-rose-400 border-rose-500/30'} rounded text-[11px] font-semibold border">
@@ -840,9 +851,12 @@ export function getAdminHtml(): string {
       loadUsers(currentUserPage + 1);
     }
 
-    function openGrantPlanModal(id, name, currentTier) {
+    function openGrantPlanModal(id) {
+      const user = currentUsersById.get(id);
+      if (!user) return;
       document.getElementById('modalUserId').value = id;
-      document.getElementById('modalUserName').textContent = name;
+      document.getElementById('modalUserName').textContent = user.name || user.email;
+      const currentTier = user.subscription?.tier || 'FREE';
       document.getElementById('modalPlanTier').value = currentTier !== 'FREE' ? currentTier : 'PRO_MONTHLY';
       document.getElementById('grantPlanModal').classList.remove('hidden');
     }
@@ -859,7 +873,7 @@ export function getAdminHtml(): string {
       try {
         const res = await fetch(\`/v1/admin/users/\${id}/plan\`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-admin-key': adminToken },
+          headers: { 'Content-Type': 'application/json', Authorization: \`Bearer \${adminToken}\` },
           body: JSON.stringify({ tier, months }),
         });
         if (!res.ok) throw new Error('Failed to update plan');
@@ -876,7 +890,7 @@ export function getAdminHtml(): string {
       try {
         const res = await fetch(\`/v1/admin/users/\${id}/ban\`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-admin-key': adminToken },
+          headers: { 'Content-Type': 'application/json', Authorization: \`Bearer \${adminToken}\` },
           body: JSON.stringify({ isBanned }),
         });
         if (!res.ok) throw new Error('Failed to toggle ban');
@@ -889,7 +903,7 @@ export function getAdminHtml(): string {
 
     async function loadCoupons() {
       try {
-        const res = await fetch('/v1/admin/coupons', { headers: { 'x-admin-key': adminToken } });
+        const res = await fetch('/v1/admin/coupons', { headers: { Authorization: \`Bearer \${adminToken}\` } });
         const { data } = await res.json();
         const tbody = document.getElementById('couponsTableBody');
         tbody.innerHTML = (data || []).map(c => \`
@@ -941,7 +955,7 @@ export function getAdminHtml(): string {
       try {
         const res = await fetch('/v1/admin/coupons', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-admin-key': adminToken },
+          headers: { 'Content-Type': 'application/json', Authorization: \`Bearer \${adminToken}\` },
           body: JSON.stringify({ code, discountType, discountValue, maxUses, expiresAt }),
         });
         const data = await res.json();
@@ -958,7 +972,7 @@ export function getAdminHtml(): string {
       try {
         const res = await fetch(\`/v1/admin/coupons/\${id}/toggle\`, {
           method: 'PATCH',
-          headers: { 'x-admin-key': adminToken },
+          headers: { Authorization: \`Bearer \${adminToken}\` },
         });
         if (!res.ok) throw new Error('Failed to toggle coupon');
         showToast('Coupon status updated.');
@@ -973,7 +987,7 @@ export function getAdminHtml(): string {
       try {
         const res = await fetch(\`/v1/admin/coupons/\${id}\`, {
           method: 'DELETE',
-          headers: { 'x-admin-key': adminToken },
+          headers: { Authorization: \`Bearer \${adminToken}\` },
         });
         if (!res.ok) throw new Error('Failed to delete coupon');
         showToast('Coupon deleted.');
@@ -985,7 +999,7 @@ export function getAdminHtml(): string {
 
     async function loadReferrals() {
       try {
-        const res = await fetch('/v1/admin/referrals', { headers: { 'x-admin-key': adminToken } });
+        const res = await fetch('/v1/admin/referrals', { headers: { Authorization: \`Bearer \${adminToken}\` } });
         const { data } = await res.json();
         const tbody = document.getElementById('referralsTableBody');
         tbody.innerHTML = (data || []).map(r => \`
@@ -1013,8 +1027,22 @@ export function getAdminHtml(): string {
       }
     }
 
-    function downloadCsv(url) {
-      window.open(\`\${url}?adminKey=\${encodeURIComponent(adminToken)}\`, '_blank');
+    async function downloadCsv(url) {
+      try {
+        const res = await fetch(url, { headers: { Authorization: \`Bearer \${adminToken}\` } });
+        if (!res.ok) throw new Error('Export failed');
+        const blob = await res.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = url.endsWith('users.csv') ? 'follope_users.csv' : 'follope_invoices.csv';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(objectUrl);
+      } catch (err) {
+        showToast(err.message || 'Export failed', true);
+      }
     }
 
     function getBadgeClass(tier) {

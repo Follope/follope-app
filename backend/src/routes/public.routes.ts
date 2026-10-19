@@ -26,7 +26,6 @@ export function createPublicRouter(prisma: PrismaClient) {
     try {
       const invoice = await publicInvoiceService.getByToken(String(req.params.publicToken), {
         markViewed: false,
-        allowInactive: true,
       });
       const pdf = await renderInvoicePdf(invoice);
       const filename = `${invoice.invoiceNumber.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`;
@@ -44,4 +43,3 @@ export function createPublicRouter(prisma: PrismaClient) {
 
   return router;
 }
-

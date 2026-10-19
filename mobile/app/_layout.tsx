@@ -1,6 +1,6 @@
 import '../global.css';
 import { useEffect, useState } from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Platform } from 'react-native';
 import { Stack } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StatusBar } from 'expo-status-bar';
@@ -37,9 +37,9 @@ function useSessionHydration() {
       }
 
       try {
-        const result = await api.post<{ user: AuthUser; accessToken: string; refreshToken: string }>(
+        const result = await api.post<{ user: AuthUser; accessToken: string; refreshToken?: string }>(
           '/auth/refresh',
-          { refreshToken },
+          Platform.OS === 'web' ? undefined : { refreshToken },
           { skipAuth: true }
         );
         await setSession(result.user, result.accessToken, result.refreshToken);
@@ -104,4 +104,3 @@ export default function RootLayout() {
     </SafeAreaProvider>
   );
 }
-
